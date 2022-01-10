@@ -1,0 +1,2 @@
+/usr/bin/ar qc liblibsais64.a  CMakeFiles/libsais64.dir/extlib/libsais/src/libsais64.c.o CMakeFiles/libsais64.dir/extlib/libsais/src/libsais.c.o
+/usr/bin/ranlib liblibsais64.a

@@ -1,0 +1,2 @@
+/usr/bin/ar qc libmalloc_count.a  CMakeFiles/malloc_count.dir/extlib/malloc_count/malloc_count.c.o
+/usr/bin/ranlib libmalloc_count.a

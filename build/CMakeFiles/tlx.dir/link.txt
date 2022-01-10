@@ -1,0 +1,2 @@
+/usr/bin/ar qc libtlx.a  CMakeFiles/tlx.dir/extlib/tlx/tlx/cmdline_parser.cpp.o CMakeFiles/tlx.dir/extlib/tlx/tlx/string/parse_si_iec_units.cpp.o CMakeFiles/tlx.dir/extlib/tlx/tlx/die/core.cpp.o
+/usr/bin/ranlib libtlx.a

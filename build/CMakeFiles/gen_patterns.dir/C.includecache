@@ -1,0 +1,22 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/herlez/uni/ma/dist_index/genpatterns.c
+time.h
+-
+sys/time.h
+-
+sys/stat.h
+-
+stdio.h
+-
+string.h
+-
+errno.h
+-
+

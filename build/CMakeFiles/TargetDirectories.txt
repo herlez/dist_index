@@ -1,0 +1,8 @@
+/home/herlez/uni/ma/dist_index/build/CMakeFiles/rebuild_cache.dir
+/home/herlez/uni/ma/dist_index/build/CMakeFiles/edit_cache.dir
+/home/herlez/uni/ma/dist_index/build/CMakeFiles/gen_patterns.dir
+/home/herlez/uni/ma/dist_index/build/CMakeFiles/malloc_count.dir
+/home/herlez/uni/ma/dist_index/build/CMakeFiles/tdc.dir
+/home/herlez/uni/ma/dist_index/build/CMakeFiles/tlx.dir
+/home/herlez/uni/ma/dist_index/build/CMakeFiles/bench.dir
+/home/herlez/uni/ma/dist_index/build/CMakeFiles/libsais64.dir

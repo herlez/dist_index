@@ -1,0 +1,15 @@
+[submodule "extlib/wavelet_tree"]
+	path = extlib/wavelet_tree
+	url = git@github.com:pasta-toolbox/wavelet_tree.git
+[submodule "extlib/malloc_count"]
+	path = extlib/malloc_count
+	url = git@github.com:bingmann/malloc_count.git
+[submodule "extlib/tdc"]
+	path = extlib/tdc
+	url = git@github.com:herlez/tdc.git
+[submodule "extlib/tlx"]
+	path = extlib/tlx
+	url = https://github.com/tlx/tlx
+[submodule "extlib/libsais"]
+	path = extlib/libsais
+	url = git@github.com:IlyaGrebnov/libsais.git
