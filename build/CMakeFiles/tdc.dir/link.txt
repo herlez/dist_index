@@ -1,2 +1,0 @@
-/usr/bin/ar qc libtdc.a  CMakeFiles/tdc.dir/extlib/tdc/src/vec/int_vector.cpp.o CMakeFiles/tdc.dir/extlib/tdc/src/vec/allocate.cpp.o
-/usr/bin/ranlib libtdc.a

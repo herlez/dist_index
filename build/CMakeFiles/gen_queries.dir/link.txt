@@ -1,1 +1,0 @@
-/usr/bin/c++  -O3 -DNDEBUG   CMakeFiles/gen_queries.dir/generate_queries.cpp.o  -o gen_queries 

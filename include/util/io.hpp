@@ -12,6 +12,21 @@
 
 namespace alx::io {
 
+struct out_t {
+  template <typename T>
+  out_t& operator<<(T&& x) {
+    int world_rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+    std::filesystem::path log_path = "/tmp/alxlog" + std::to_string(world_rank) + std::string(".log");
+    std::ofstream out(log_path, std::ios::out | std::ios::app);
+    out << x;
+    // log << x;
+    return *this;
+  }
+};
+
+static out_t alxout;
+
 std::vector<std::string> read_strings_line_by_line(std::filesystem::path const& path) {
   std::fstream stream(path.c_str(), std::ios::in);
   std::string cur_line;
@@ -123,7 +138,7 @@ size_t get_number_of_patterns(std::string header) {
   return std::atoi(header.substr(start_pos).substr(0, end_pos).c_str());
 }
 
-size_t get_patterns_length(std::string header) { 
+size_t get_patterns_length(std::string header) {
   size_t start_pos = header.find("length=");
   if (start_pos == std::string::npos || start_pos + 7 >= header.size()) {
     return -1;
@@ -151,21 +166,19 @@ std::vector<std::string> load_patterns(std::filesystem::path path) {
   size_t n = get_number_of_patterns(header);
   size_t m = get_patterns_length(header);
 
-	//extract patterns from file and search them in the index
-	for(size_t i=0;i<n;++i){
-		std::string p = std::string();
+  // extract patterns from file and search them in the index
+  for (size_t i = 0; i < n; ++i) {
+    std::string p = std::string();
 
-		for(size_t j=0;j<m;++j){
-			char c;
-			ifs.get(c);
-			p+=c;
-		}
+    for (size_t j = 0; j < m; ++j) {
+      char c;
+      ifs.get(c);
+      p += c;
+    }
     patterns.push_back(p);
-	}
+  }
 
   return patterns;
 }
-
-
 
 }  // namespace alx::io

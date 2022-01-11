@@ -49,7 +49,7 @@ class r_index {
     unsigned char last_run_char = m_run_letters.back();
     auto const& last_char_run_lengths = m_run_lengths[last_run_char];
     size_t last_run_length = last_char_run_lengths.back() - last_char_run_lengths[last_char_run_lengths.size()-2];
-    return m_run_starts.back() + last_run_length;
+    return m_run_starts.back().u64() + last_run_length;
   }
   size_t num_runs() {
     return m_run_starts.size();

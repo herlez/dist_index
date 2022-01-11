@@ -1,1 +1,0 @@
-/usr/bin/c++  -O3 -DNDEBUG  -Wl,-Bsymbolic-functions CMakeFiles/bench.dir/benchmark.cpp.o  -o bench  libtlx.a libmalloc_count.a -ldl liblibsais64.a libtdc.a /usr/lib/x86_64-linux-gnu/libmpichcxx.so /usr/lib/x86_64-linux-gnu/libmpich.so 

@@ -14,6 +14,7 @@ class spacer {
 
   void reset() {
     m_begin = malloc_count_current();
+    malloc_count_reset_peak();
   }
 
   int64_t get() {
