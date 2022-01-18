@@ -1,7 +1,11 @@
 #pragma once
 
+#include <limits.h>
+#include <stdint.h>
+
 #include <array>
 #include <bitset>
+#include <cstddef>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -10,7 +14,26 @@
 
 #include "timer.hpp"
 
+namespace alx {
+  typedef std::basic_string<unsigned char> ustring;
+}
+
+
 namespace alx::io {
+
+#if SIZE_MAX == UCHAR_MAX
+#define my_MPI_SIZE_T MPI_UNSIGNED_CHAR
+#elif SIZE_MAX == USHRT_MAX
+#define my_MPI_SIZE_T MPI_UNSIGNED_SHORT
+#elif SIZE_MAX == UINT_MAX
+#define my_MPI_SIZE_T MPI_UNSIGNED
+#elif SIZE_MAX == ULONG_MAX
+#define my_MPI_SIZE_T MPI_UNSIGNED_LONG
+#elif SIZE_MAX == ULLONG_MAX
+#define my_MPI_SIZE_T MPI_UNSIGNED_LONG_LONG
+#else
+#error "what is happening here?"
+#endif
 
 struct out_t {
   template <typename T>
@@ -26,6 +49,38 @@ struct out_t {
 };
 
 static out_t alxout;
+
+// Calculate correct indexes [begin, end)
+std::tuple<size_t, size_t> slice_indexes(size_t size, size_t world_rank, size_t world_size) {
+  if (world_size > size) {
+    if (world_rank < size) {
+      return {world_rank, world_rank + 1};
+    } else {
+      return {size, size};
+    }
+  }
+
+  size_t chunk_size = size / world_size;
+
+  size_t begin = world_rank * chunk_size;
+  size_t end = (world_rank != world_size - 1) ? (world_rank + 1) * chunk_size : size;
+
+  return {begin, end};
+}
+
+std::tuple<size_t, size_t> locate_slice(size_t index, size_t size, size_t world_size) {
+  if (world_size > size) {
+    return {index, 0};
+  }
+
+  size_t chunk_size = size / world_size;
+
+  size_t rank = size / chunk_size;
+  rank = std::min(rank, world_size - 1);
+
+  size_t local_index = (rank != world_size - 1) ? index % chunk_size : index - (size - 1) * chunk_size;
+  return {rank, local_index};
+}
 
 std::vector<std::string> read_strings_line_by_line(std::filesystem::path const& path) {
   std::fstream stream(path.c_str(), std::ios::in);

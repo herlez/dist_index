@@ -1,69 +1,46 @@
 #pragma once
 
 #include <assert.h>
-#include <libsais64.h>
+#include <mpi.h>
 
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <string>
 #include <vector>
+
 #include "util/io.hpp"
 
 namespace alx {
 
-struct bwt {
+class bwt {
+ private:
   size_t m_start_index;
   size_t m_end_index;
-  size_t m_chunk_size;
+  size_t m_global_size;
 
-  size_t primary_index;
-  std::string last_row;
+  size_t m_primary_index;
+  alx::ustring m_last_row;
+  std::array<size_t, 256> m_prev_occ;
 
-  bwt() = default;
-
-  bwt(std::string const& text) {
-    last_row.resize(text.size());
-    std::vector<int64_t> sa(text.size() + 100);
-    primary_index = libsais64_bwt(reinterpret_cast<const uint8_t*>(text.data()), reinterpret_cast<uint8_t*>(last_row.data()), sa.data(), text.size(), int64_t{100}, nullptr);
-  }
-
-  std::string to_text() const {
-    std::string text(last_row.size(), ' ');
-    std::vector<int64_t> sa(text.size() + 1);
-    libsais64_unbwt(reinterpret_cast<const uint8_t*>(last_row.data()), reinterpret_cast<uint8_t*>(text.data()), sa.data(), text.size(), nullptr, primary_index);
-    return text;
-  }
-
-  int to_file(std::filesystem::path last_row_path, std::filesystem::path primary_index_path) const {
-    alx::io::alxout << "Write to " << last_row_path << " and " << primary_index_path << "\n";
-    // Write bwt
-    if (!std::filesystem::exists(primary_index_path)) {
-      std::ofstream out(primary_index_path, std::ios::binary);
-      out.write(reinterpret_cast<const char*>(&primary_index), sizeof(primary_index));
-    }
-    if (!std::filesystem::exists(last_row_path)) {
-      std::ofstream out(last_row_path, std::ios::binary);
-      out << last_row;
-    }
-    return 0;
-  }
-
+ public:
+  // Load partial bwt from bwt and primary index file.
   bwt(std::filesystem::path const& last_row_path, std::filesystem::path const& primary_index_path, int world_rank, int world_size) {
     // If file does not exist, return empty string
     if (!std::filesystem::exists(last_row_path)) {
-      std::cerr << last_row_path << " does not exist.";
+      alx::io::alxout << last_row_path << " does not exist.";
       return;
     }
     if (!std::filesystem::exists(primary_index_path)) {
-      std::cerr << primary_index_path << " does not exist.";
+      alx::io::alxout << primary_index_path << " does not exist.";
       return;
     }
 
     // Read primary index
     {
       std::ifstream in(primary_index_path, std::ios::binary);
-      in.read(reinterpret_cast<char*>(&primary_index), sizeof(primary_index));
+      in.read(reinterpret_cast<char*>(&m_primary_index), sizeof(m_primary_index));
     }
     // Read last row
     {
@@ -72,40 +49,106 @@ struct bwt {
       std::streampos begin = in.tellg();
       in.seekg(0, std::ios::end);
       size_t size = in.tellg() - begin;
-      m_chunk_size = size / world_size;
-      m_start_index = world_rank * m_chunk_size;
-      m_end_index = (world_rank == world_size - 1) ? size : (world_rank + 1) * m_chunk_size;
+      std::tie(m_start_index, m_end_index) = alx::io::slice_indexes(size, world_rank, world_size);
 
-      last_row.resize(size);
+      m_last_row.resize(size);
       in.seekg(m_start_index, std::ios::beg);
-      in.read(last_row.data(), m_end_index - m_start_index);
+      in.read(reinterpret_cast<char*>(m_last_row.data()), m_end_index - m_start_index);
     }
+
+    // Initial global prefix sums
+    m_prev_occ.fill(0);
+
+    // Build local
+    std::array<size_t, 256> histogram;
+    for (char c : m_last_row) {
+      ++histogram[c];
+    }
+    // Exclusive scan histogram
+    MPI_Barrier(MPI_COMM_WORLD);
+    MPI_Exscan(histogram.data(), m_prev_occ.data(), 256, my_MPI_SIZE_T, MPI_SUM, MPI_COMM_WORLD);
   }
 
-  template <typename SA_Container>
-  static bwt bwt_from_sa(SA_Container const& sa, std::string const& text) {
-    assert(sa.size() == text.size());
-    alx::bwt bwt;
-    bwt.last_row.reserve(text.size());
-    bwt.last_row.push_back(text.back());  // In first_row $ is first.
+  // Calulate partial bwt from distributed suffix array and distributed text.
+  template <typename t_text_container, typename t_sa_container>
+  bwt(t_text_container const& text_slice, t_sa_container const& sa_slice, size_t text_size, int world_rank, int world_size) {
+    std::tie(m_start_index, m_end_index) = alx::io::slice_indexes(text_size, world_rank, world_size);
 
-    for (size_t i{0}; i < sa.size(); ++i) {
-      if (sa[i] == 0) [[unlikely]] {
-        bwt.primary_index = i;
+    assert(text_slice.size() == sa_slice.size());
+
+    m_last_row.reserve(text_slice.size());
+    if (world_rank == 0) {
+      m_last_row.push_back(text_slice.back());  // text[0] = imaginary $
+    }
+
+    // Open suffix array for mpi
+    MPI_Win window;
+    MPI_Win_create(text_slice.data(), text_slice.size() * sizeof(sa_slice.size_type), sizeof(sa_slice.size_type), MPI_INFO_NULL, MPI_COMM_WORLD, &window);
+    MPI_Win_fence(0, window);
+    m_primary_index = 0;
+    for (size_t i{0}; i < sa_slice.size(); ++i) {
+      if (sa_slice[i] == 0) [[unlikely]] {
+        m_primary_index = m_start_index + i;
       } else {
-        bwt.last_row.push_back(text[sa[i] - 1]);
+        size_t requested_global_index = sa_slice[i] - 1;
+        size_t target_rank;  // PE# in which the char lies
+        size_t local_index;  // index in PE at which char lies
+        std::tie(target_rank, local_index) = alx::io::locate_slice(requested_global_index, text_size, world_size);
+
+        char last_row_character;
+        if (target_rank == world_rank) {
+          last_row_character = text_slice[local_index];
+        } else {
+          MPI_Get(&last_row_character, 1, MPI_CHAR, target_rank, local_index, 1, MPI_CHAR, window);
+        }
+        m_last_row[i] = last_row_character;
       }
     }
-    assert(bwt.size() == text.size());
-    return bwt;
+    MPI_Win_fence(0, window);
+    MPI_Win_free(&window);
+
+    // Share primary index
+    size_t shared_primary_index = 0;
+    MPI_Allreduce(&m_primary_index, &shared_primary_index, 1, my_MPI_SIZE_T, MPI_SUM, MPI_COMM_WORLD);
+    m_primary_index = shared_primary_index;
   }
 
+  size_t prev_occ(unsigned char c) const {
+    return m_prev_occ[c];
+  }
+
+  size_t primary_index() const {
+    return m_primary_index;
+  }
+
+  size_t start_index() const {
+    return m_start_index;
+  }
+
+  size_t end_index() const {
+    return m_end_index;
+  }
+
+  // Return size of text/bwt.
+  size_t global_size() const {
+    return m_last_row.size();
+  }
+
+  // Return size of text/bwt slice.
   size_t size() const {
-    return last_row.size();
+    return m_end_index - m_start_index;
   }
 
-  /*char& operator[](size_t i) {
-    return last_row[i];
-  }*/
+  alx::ustring::const_iterator cbegin() const {
+    return m_last_row.cbegin();
+  }
+
+  alx::ustring::const_iterator cend() const {
+    return m_last_row.cbegin();
+  }
+
+  alx::ustring::value_type const& operator[](size_t i) const {
+    return m_last_row[i];
+  }
 };
 }  // namespace alx

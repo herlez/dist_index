@@ -11,6 +11,7 @@
 #include "bwt.hpp"
 #include "util/spacer.hpp"
 #include "util/timer.hpp"
+#include "util/io.hpp"
 
 
 namespace alx {
@@ -27,15 +28,15 @@ class r_index {
     m_bwt_primary_index = 0;
   }
 
-  r_index(std::string const& text) {
+  r_index(std::string const& text) : m_start_index{0}, m_end_index{text.size()} {
     benchutil::timer timer;
     alx::bwt input_bwt(text);
-    std::cout << " time_bwt=" << timer.get_and_reset();
-    m_bwt_primary_index = input_bwt.primary_index;
+    alx::io::alxout << " time_bwt=" << timer.get_and_reset();
+    m_bwt_primary_index = input_bwt.primary_index();
     build_structure(input_bwt);
   }
 
-  r_index(alx::bwt const& bwt) : m_bwt_primary_index(bwt.primary_index) {
+  r_index(alx::bwt const& bwt) : m_bwt_primary_index(bwt.primary_index()) {
     build_structure(bwt);
   }
 
@@ -63,8 +64,8 @@ class r_index {
       return 0;
     }
     if (debug) {
-      std::cout << "\nIteration " << pattern.size() - 1 << " after scanning " << c << std::endl;
-      std::cout << "Span[" << span_start << ", " << span_end << "]" << std::endl;
+      alx::io::alxout << "\nIteration " << pattern.size() - 1 << " after scanning " << c << '\n';
+      alx::io::alxout << "Span[" << span_start << ", " << span_end << "]" << '\n';
     }
 
     for (size_t i = pattern.size() - 1; i != 0; --i) {
@@ -74,9 +75,9 @@ class r_index {
       span_start = size_t{m_char_sum[c]} + rank_start;
       span_end = size_t{m_char_sum[c]} + rank_end;
       if (debug) {
-        std::cout << "Iteration " << i - 1 << " after scanning " << c << std::endl;
-        std::cout << "Rank[" << rank_start << ", " << rank_end << "]" << std::endl;
-        std::cout << "Span[" << span_start << ", " << span_end << "]" << std::endl;
+        alx::io::alxout << "Iteration " << i - 1 << " after scanning " << c << '\n';
+        alx::io::alxout << "Rank[" << rank_start << ", " << rank_end << "]" << '\n';
+        alx::io::alxout << "Span[" << span_start << ", " << span_end << "]" << '\n';
       }
       if (span_start == span_end) {
         return 0;
@@ -101,10 +102,11 @@ class r_index {
   using wm_type = decltype(pasta::make_wm<pasta::BitVector>(m_run_letters.begin(), m_run_letters.end(), 256));
   std::unique_ptr<wm_type> m_run_letters_wm;
 
-  //alx::wavelet_tree m_run_letters_wt;
-
   std::array<std::vector<t_word>, 256> m_run_lengths;  // 5r B
   std::array<t_word, 257> m_char_sum;                  // 5s B
+
+  size_t m_start_index;
+  size_t m_end_index;
 
   size_t pred(size_t i) {
     return m_pred.predecessor(m_run_starts.data(), m_run_starts.size(), i).pos;
@@ -126,9 +128,9 @@ class r_index {
 
     unsigned char run_symbol = m_run_letters[kth_run];
     if (debug) {
-      std::cout << "rank_" << c << "(" << pos << ") = "
-                << m_run_lengths[c][num_c_run] + (c == run_symbol ? (pos - run_start + 1) : 0) << std::endl;
-      std::cout << "kth_run=" << kth_run << " run_start=" << run_start << " num_c_run=" << num_c_run << std::endl;
+      alx::io::alxout << "rank_" << c << "(" << pos << ") = "
+                << m_run_lengths[c][num_c_run] + (c == run_symbol ? (pos - run_start + 1) : 0) << '\n';
+      alx::io::alxout << "kth_run=" << kth_run << " run_start=" << run_start << " num_c_run=" << num_c_run << '\n';
     }
 
     return size_t{m_run_lengths[c][num_c_run]} + (c == run_symbol ? (pos - run_start + 1) : 0);
@@ -147,12 +149,12 @@ class r_index {
 
       // Build data structure
       for (size_t run_start = 0; run_start < input_bwt.size();) {
-        unsigned char run_letter = input_bwt.last_row[run_start];
+        unsigned char run_letter = input_bwt[run_start];
         m_run_starts.push_back(run_start);
         m_run_letters.push_back(run_letter);
 
         size_t run_end = run_start + 1;
-        while (run_end < input_bwt.size() && input_bwt.last_row[run_end] == run_letter) {
+        while (run_end < input_bwt.size() && input_bwt[run_end] == run_letter) {
           ++run_end;
         }
         m_run_lengths[run_letter].push_back(m_run_lengths[run_letter].back() + run_end - run_start);
@@ -162,7 +164,7 @@ class r_index {
       for (auto& a : m_run_lengths) {
         a.shrink_to_fit();
       }
-      std::cout << " \nruns_time=" << timer.get_and_reset()
+      alx::io::alxout << " \nruns_time=" << timer.get_and_reset()
                 << " runs_mem=" << spacer.get()
                 << " runs_mempeak=" << spacer.get_peak();
     }
@@ -173,7 +175,7 @@ class r_index {
       benchutil::spacer spacer;
 
       m_pred = tdc::pred::Index<t_word>(m_run_starts.data(), m_run_starts.size(), 7);
-      std::cout << " \npred_time=" << timer.get_and_reset()
+      alx::io::alxout << " \npred_time=" << timer.get_and_reset()
                 << " pred_mem=" << spacer.get()
                 << " pred_mempeak=" << spacer.get_peak();
       // verify_pred();
@@ -187,7 +189,7 @@ class r_index {
       m_run_letters_wm = std::make_unique<wm_type>(m_run_letters.begin(), m_run_letters.end(), 256);
       //m_run_letters_wt = alx::wavelet_tree(m_run_letters);
 
-      std::cout << " \nwt_time=" << timer.get_and_reset()
+      alx::io::alxout << " \nwt_time=" << timer.get_and_reset()
                 << " wt_mem=" << spacer.get()
                 << " wt_mempeak=" << spacer.get_peak();
       // verify_wt();
@@ -202,19 +204,22 @@ class r_index {
       for (size_t i = 0; i < m_char_sum.size(); ++i) {
         m_char_sum[i] = 0;
       }
-      for (auto c : input_bwt.last_row) {
+      /*for (auto c : input_bwt.last_row) {
         ++m_char_sum[c];
+      }*/
+      for(size_t i{0}; i < input_bwt.size(); ++i) {
+        ++m_char_sum[input_bwt[i]];
       }
       std::exclusive_scan(m_char_sum.begin(), m_char_sum.end(), m_char_sum.begin(), t_word{0});
 
-      std::cout << " carray_time=" << timer.get_and_reset()
+      alx::io::alxout << " \ncarray_time=" << timer.get_and_reset()
                 << " carray_mem_peak=" << spacer.get_peak()
                 << " carray_mem_ds=" << spacer.get()
                 << '\n';
     }
 
-    std::cout << " num_runs=" << m_run_starts.size();
-    std::cout << " index_time=" << timer.get_and_reset()
+    alx::io::alxout << " num_runs=" << m_run_starts.size();
+    alx::io::alxout << " index_time=" << timer.get_and_reset()
               << " index_mem_peak=" << spacer.get_peak()
               << " index_mem_ds=" << spacer.get()
               << '\n';
@@ -227,24 +232,24 @@ class r_index {
     }
 
     if (m_run_starts[0] != 0) {
-      std::cerr << "\nFirst entry in m_runs_starts should be 0!" << std::endl;
+      std::cerr << "\nFirst entry in m_runs_starts should be 0!" << '\n';
       return false;
     }
     for (size_t i = 1; i < m_run_starts.size(); ++i) {
       for (size_t j = m_run_starts[i - 1]; j < m_run_starts[i]; ++j) {
         if (pred(j) != i - 1) {
-          std::cout << "\nPredecessor of " << j << ": " << pred(j) << " should be " << i - 1 << std::endl;
+          alx::io::alxout << "\nPredecessor of " << j << ": " << pred(j) << " should be " << i - 1 << '\n';
           return false;
         }
       }
       for (size_t j = m_run_starts.back(); j < text_size(); ++j) {
         if (pred(j) != m_run_starts.size() - 1) {
-          std::cout << "\nPredecessor of " << j << ": " << pred(j) << " should be " << m_run_starts.size() - 1 << std::endl;
+          alx::io::alxout << "\nPredecessor of " << j << ": " << pred(j) << " should be " << m_run_starts.size() - 1 << '\n';
           return false;
         }
       }
     }
-    std::cout << " verify_predecessor=true verify_predecessor_time=" << timer.get() << "\n";
+    alx::io::alxout << " verify_predecessor=true verify_predecessor_time=" << timer.get() << "\n";
     return true;
   }
 
@@ -256,13 +261,13 @@ class r_index {
       ++histogram[m_run_letters[i]];
       for (size_t c = 0; c < 256; ++c) {
         if (run_rank(c, i) != histogram[c]) {
-          std::cout << "Run_rank wrong at   i: " << i << " c:" << c << " Got " << run_rank(c, i) << " but expected " << histogram[c] << '\n';
+          alx::io::alxout << "Run_rank wrong at   i: " << i << " c:" << c << " Got " << run_rank(c, i) << " but expected " << histogram[c] << '\n';
           return false;
         }
       }
     }
 
-    std::cout << " verify_wt=true verify_wt_time=" << timer.get() << "\n";
+    alx::io::alxout << " verify_wt=true verify_wt_time=" << timer.get() << "\n";
 
     return true;
   }
@@ -273,26 +278,25 @@ class r_index {
       return true;
     }
 
-    size_t primary_index = input_bwt.primary_index;
-    auto const& last_row = input_bwt.last_row;
+    size_t primary_index = input_bwt.primary_index();
 
     std::vector<size_t> histogram(256, 0);
-    for (size_t i = 0; i <= last_row.size(); ++i) {
+    for (size_t i = 0; i <= input_bwt.size(); ++i) {
       if (i < primary_index) {
-        ++histogram[last_row[i]];
+        ++histogram[input_bwt[i]];
       }
       if (i > primary_index) {
-        ++histogram[last_row[i - 1]];
+        ++histogram[input_bwt[i - 1]];
       }
 
       for (size_t c = 0; c < 128; ++c) {
         if (rank(i, c) != histogram[c]) {
-          std::cout << "Rank_sigma wrong at i: " << i << " c:" << c << " Got " << rank(c, i) << " but expected " << histogram[c] << '\n';
+          alx::io::alxout << "Rank_sigma wrong at i: " << i << " c:" << c << " Got " << rank(c, i) << " but expected " << histogram[c] << '\n';
           return false;
         }
       }
     }
-    std::cout << " verify_rank=true verify_rank_time=" << timer.get() << "\n";
+    alx::io::alxout << " verify_rank=true verify_rank_time=" << timer.get() << "\n";
     return true;
   }
 };

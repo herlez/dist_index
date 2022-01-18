@@ -7,6 +7,7 @@
 #include <string>
 
 #include "include/bwt.hpp"
+#include "include/bwt_index.hpp"
 #include "include/r_index_alx.hpp"
 #include "include/util/io.hpp"
 #include "include/util/spacer.hpp"
@@ -69,23 +70,23 @@ class index_benchmark {
                     << " text=" << file_name;
 
     if (mode == benchmark_mode::from_text) {
-      std::cerr << "Build from index from text not supported yet.\n";
+      std::cerr << "Build from text not supported yet.\n";
       return;
     } else if (mode == benchmark_mode::from_bwt) {
       std::filesystem::path last_row_path = input_path;
       last_row_path += ".bwt";
       std::filesystem::path primary_index_path = input_path;
       primary_index_path += ".prm";
-      alx::io::alxout << "[" << world_rank << "/" << world_size << "]: read bwt from " << last_row_path << " and " << primary_index_path << "\n";
+      alx::io::alxout << "\n[" << world_rank << "/" << world_size << "]: read bwt from " << last_row_path << " and " << primary_index_path << "\n";
       alx::bwt bwt(last_row_path, primary_index_path, world_rank, world_size);
-      alx::io::alxout << "[" << world_rank << "/" << world_size << "]: I hold bwt from " << bwt.m_start_index << " to " << bwt.m_end_index << "\n";
+      alx::io::alxout << "[" << world_rank << "/" << world_size << "]: I hold bwt from " << bwt.start_index() << " to " << bwt.end_index() << "\n";
 
       timer.reset();
       spacer.reset();
       r_index = t_index(bwt); //TODO
 
     } else if (mode == benchmark_mode::from_index) {
-      std::cerr << "Build from index from index file not supported yet.\n";
+      std::cerr << "Build from index file not supported yet.\n";
       return;
     } else {
       std::cerr << "Unknown benchmark mode. Must be between 0 and 2.\n";
@@ -93,7 +94,7 @@ class index_benchmark {
     }
 
     alx::io::alxout << "input_size=" << r_index.text_size()
-                    << " ds_time" << timer.get()
+                    << " ds_time=" << timer.get()
                     << " ds_mem=" << spacer.get()
                     << " ds_mempeak=" << spacer.get_peak();
 
@@ -139,7 +140,8 @@ int main(int argc, char** argv) {
   benchmark.patterns_path = patterns_path;
   benchmark.mode = static_cast<benchmark_mode>(mode);
 
-  benchmark.run<alx::r_index>("herlez");
+  //benchmark.run<alx::r_index>("herlez");
+  benchmark.run<alx::bwt_index>("fm");
 
   // Finalize the MPI environment.
   MPI_Finalize();
