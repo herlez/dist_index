@@ -59,6 +59,7 @@ class index_benchmark {
     MPI_Barrier(MPI_COMM_WORLD);
 
     // Build Index
+    alx::bwt bwt;
     t_index r_index;
     std::string file_name = input_path.filename();
 
@@ -78,12 +79,12 @@ class index_benchmark {
       std::filesystem::path primary_index_path = input_path;
       primary_index_path += ".prm";
       alx::io::alxout << "\n[" << world_rank << "/" << world_size << "]: read bwt from " << last_row_path << " and " << primary_index_path << "\n";
-      alx::bwt bwt(last_row_path, primary_index_path, world_rank, world_size);
+      bwt = alx::bwt(last_row_path, primary_index_path, world_rank, world_size);
       alx::io::alxout << "[" << world_rank << "/" << world_size << "]: I hold bwt from " << bwt.start_index() << " to " << bwt.end_index() << "\n";
 
       timer.reset();
       spacer.reset();
-      r_index = t_index(bwt); //TODO
+      r_index = t_index(bwt);
 
     } else if (mode == benchmark_mode::from_index) {
       std::cerr << "Build from index file not supported yet.\n";
@@ -93,24 +94,26 @@ class index_benchmark {
       return;
     }
 
-    alx::io::alxout << "input_size=" << r_index.text_size()
+    alx::io::alxout << "input_size=" << bwt.global_size()
                     << " ds_time=" << timer.get()
                     << " ds_mem=" << spacer.get()
                     << " ds_mempeak=" << spacer.get_peak();
 
     std::vector<size_t> count_results;
-    /*
-        // Counting Queries
-        timer.reset();
-        for (std::string const& q : count_queries) {
-          count_results.push_back(r_index.occ(q));
-        }
-        std::cout << " c_time=" << timer.get()
-                  << " c_sum=" << accumulate(count_results.begin(), count_results.end(), 0)
-                  << "\n";
 
-        timer.reset();
-        */
+
+    
+    // Counting Queries
+    timer.reset();
+    
+    patterns.resize(1); //REMOVE LATER
+    count_results = r_index.occ_batched(patterns);
+
+    std::cout << " c_time=" << timer.get()
+              << " c_sum=" << accumulate(count_results.begin(), count_results.end(), 0)
+              << "\n";
+
+    timer.reset();
   }
 };
 
@@ -140,7 +143,7 @@ int main(int argc, char** argv) {
   benchmark.patterns_path = patterns_path;
   benchmark.mode = static_cast<benchmark_mode>(mode);
 
-  //benchmark.run<alx::r_index>("herlez");
+  // benchmark.run<alx::r_index>("herlez");
   benchmark.run<alx::bwt_index>("fm");
 
   // Finalize the MPI environment.

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <limits.h>
+#include <mpi.h>
 #include <stdint.h>
 
 #include <array>
@@ -15,9 +16,17 @@
 #include "timer.hpp"
 
 namespace alx {
-  typedef std::basic_string<unsigned char> ustring;
+typedef std::basic_string<unsigned char> ustring;
 }
 
+namespace alx::mpi {
+int my_rank() {
+  int rank;
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  return rank;
+}
+
+}  // namespace alx::mpi
 
 namespace alx::io {
 
@@ -51,34 +60,34 @@ struct out_t {
 static out_t alxout;
 
 // Calculate correct indexes [begin, end)
-std::tuple<size_t, size_t> slice_indexes(size_t size, size_t world_rank, size_t world_size) {
-  if (world_size > size) {
-    if (world_rank < size) {
+std::tuple<size_t, size_t> slice_indexes(size_t global_size, size_t world_rank, size_t world_size) {
+  if (world_size > global_size) {
+    if (world_rank < global_size) {
       return {world_rank, world_rank + 1};
     } else {
-      return {size, size};
+      return {global_size, global_size};
     }
   }
 
-  size_t chunk_size = size / world_size;
+  size_t chunk_size = global_size / world_size;
 
   size_t begin = world_rank * chunk_size;
-  size_t end = (world_rank != world_size - 1) ? (world_rank + 1) * chunk_size : size;
+  size_t end = (world_rank != world_size - 1) ? (world_rank + 1) * chunk_size : global_size;
 
   return {begin, end};
 }
 
-std::tuple<size_t, size_t> locate_slice(size_t index, size_t size, size_t world_size) {
-  if (world_size > size) {
-    return {index, 0};
+std::tuple<size_t, size_t> locate_slice(size_t global_index, size_t global_size, size_t world_size) {
+  if (world_size > global_size) {
+    return {global_index, 0};
   }
 
-  size_t chunk_size = size / world_size;
+  size_t chunk_size = global_size / world_size;
 
-  size_t rank = size / chunk_size;
+  size_t rank = global_size / chunk_size;
   rank = std::min(rank, world_size - 1);
 
-  size_t local_index = (rank != world_size - 1) ? index % chunk_size : index - (size - 1) * chunk_size;
+  size_t local_index = (rank != world_size - 1) ? global_index % chunk_size : global_index - (global_size - 1) * chunk_size;
   return {rank, local_index};
 }
 

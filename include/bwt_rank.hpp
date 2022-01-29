@@ -15,26 +15,24 @@
 
 namespace alx {
 
-class bwt {
+class bwt_rank {
  private:
   size_t m_global_size;  // size of bwt
   size_t m_start_index;  // start of bwt slice
   size_t m_end_index;    // end of bwt slice (exclusive)
-  int m_world_size;      // number of PEs
-  int m_world_rank;      // PE number
+  size_t m_world_size;   // number of PEs
+  size_t m_world_rank;   // PE number
 
   alx::ustring m_last_row;             // last row bwt matrix
   size_t m_primary_index;              // index of implicit $ in last row
   std::array<size_t, 256> m_prev_occ;  // histogram of text of previous PEs
 
-  using wm_type = decltype(pasta::make_wm<pasta::BitVector>(m_last_row.cbegin(), m_last_row.cend(), 256));
-  std::unique_ptr<wm_type> m_wm;  // wavelet tree to support rank
+  using wm_type = decltype(pasta::make_wm<pasta::BitVector>(m_bwt->cbegin(), m_bwt->cend(), 256));
+  std::unique_ptr<wm_type> m_bwt_wm;  // wavelet tree to support rank
 
  public:
-  bwt() : m_global_size{0}, m_start_index{0}, m_end_index{0} {}
-
   // Load partial bwt from bwt and primary index file.
-  bwt(std::filesystem::path const& last_row_path, std::filesystem::path const& primary_index_path, int world_rank, int world_size) {
+  bwt_rank(std::filesystem::path const& last_row_path, std::filesystem::path const& primary_index_path, int world_rank, int world_size) {
     m_world_size = world_size;
     m_world_rank = world_rank;
     // If file does not exist, return empty string.
@@ -78,9 +76,7 @@ class bwt {
     MPI_Barrier(MPI_COMM_WORLD);
     MPI_Exscan(histogram.data(), m_prev_occ.data(), 256, my_MPI_SIZE_T, MPI_SUM, MPI_COMM_WORLD);
 
-    alx::io::alxout << "Building rank for bwt slice...";
     build_rank();
-    alx::io::alxout << "complete.\n";
   }
 
   // Calulate partial bwt from distributed suffix array and distributed text.
@@ -127,7 +123,6 @@ class bwt {
     size_t shared_primary_index = 0;
     MPI_Allreduce(&m_primary_index, &shared_primary_index, 1, my_MPI_SIZE_T, MPI_SUM, MPI_COMM_WORLD);
     m_primary_index = shared_primary_index;
-    build_rank();
   }
 
   // Getter
@@ -140,10 +135,10 @@ class bwt {
   size_t end_index() const {
     return m_end_index;
   }
-  int world_size() const {
+  size_t world_size() const {
     return m_world_size;
   }
-  int world_rank() const {
+  size_t world_rank() const {
     return m_world_rank;
   }
   alx::ustring::value_type const& operator[](size_t i) const {
@@ -169,19 +164,18 @@ class bwt {
     return m_last_row.cbegin();
   }
 
-  size_t global_rank(size_t global_pos, unsigned char c) const {
+  size_t rank(size_t global_pos, unsigned char c) {
     size_t slice;
     size_t local_pos;
     std::tie(slice, local_pos) = alx::io::locate_slice(global_pos, m_global_size, m_world_size);
     assert(slice == m_world_rank);
 
-    alx::io::alxout << "Answeing rank. global_pos=" << global_pos << " local_pos=" << local_pos << " c=" << c << "\n";
-    return m_prev_occ[c] + m_wm->rank(local_pos + 1, c);
+    return m_prev_occ[c] + m_bwt_wm->rank(local_pos + 1, c); 
   }
 
- private:
+  private:
   void build_rank() {
-    m_wm = std::make_unique<wm_type>(m_last_row.cbegin(), m_last_row.cend(), 256);
+    m_bwt_wm = std::make_unique<wm_type>(m_last_row.cbegin(), m_last_row.cend(), 256);
   }
 };
 }  // namespace alx

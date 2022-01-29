@@ -1,4 +1,5 @@
 #pragma once
+#include <iostream>
 #include <tdc/uint/uint40.hpp>
 
 namespace alx {
@@ -17,8 +18,13 @@ struct rank_query {
 
   tdc::uint40_t border;
 
-  unsigned char cur_char() const{
+  unsigned char cur_char() const {
     return pattern[pos_in_pattern];
   }
+
+  friend std::ostream &operator<<(std::ostream &os, const alx::rank_query query) {
+    return os << "[" << (int) query.pos_in_pattern << "]=" << std::string(query.pattern, query.pattern + query.pos_in_pattern) << " border=" << query.border;
+  }
 };
+
 }  // namespace alx
