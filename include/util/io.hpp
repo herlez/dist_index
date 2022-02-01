@@ -50,7 +50,7 @@ struct out_t {
     /*
     int world_rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
-    std::filesystem::path log_path = "/tmp/alxlog" + std::to_string(world_rank) + std::string(".log");
+    std::filesystem::path log_path = "./alxlog" + std::to_string(world_rank) + std::string(".log");
     std::ofstream out(log_path, std::ios::out | std::ios::app);
     out << x;
     */
@@ -65,7 +65,7 @@ struct bench_out_t {
   bench_out_t& operator<<(T&& x) {
     int world_rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
-    std::filesystem::path log_path = "/tmp/alxbench" + std::to_string(world_rank) + std::string(".log");
+    std::filesystem::path log_path = "./alxbench" + std::to_string(world_rank) + std::string(".log");
     std::ofstream out(log_path, std::ios::out | std::ios::app);
     out << x;
     return *this;
