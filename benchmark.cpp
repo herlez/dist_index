@@ -57,9 +57,9 @@ class index_benchmark {
         num_patterns = patterns.size();
       }
 
-      alx::io::alxout << "patterns_path=" << patterns_path << " patterns_num=" << patterns.size();
+      alx::io::benchout << "patterns_path=" << patterns_path << " patterns_num=" << patterns.size();
       if (patterns.size() != 0) {
-        alx::io::alxout << " patterns_len=" << patterns.front().size() << "\n";
+        alx::io::benchout << " patterns_len=" << patterns.front().size() << "\n";
       }
     }
     MPI_Barrier(MPI_COMM_WORLD);
@@ -71,7 +71,7 @@ class index_benchmark {
 
     alx::benchutil::timer timer;
     alx::benchutil::spacer spacer;
-    alx::io::alxout << "RESULT"
+    alx::io::benchout << "RESULT"
                     << " algo=" << algo
                     << " mode=" << mode
                     << " text=" << file_name;
@@ -100,7 +100,7 @@ class index_benchmark {
       return;
     }
 
-    alx::io::alxout << "input_size=" << bwt.global_size()
+    alx::io::benchout << " input_size=" << bwt.global_size()
                     << " ds_time=" << timer.get()
                     << " ds_mem=" << spacer.get()
                     << " ds_mempeak=" << spacer.get_peak();
@@ -117,9 +117,11 @@ class index_benchmark {
     // for (auto i: count_results)
     // std::cout << i << ' ';
 
-    std::cout << " c_time=" << timer.get()
+    if(world_rank == 0) {
+    alx::io::benchout << " c_time=" << timer.get()
               << " c_sum=" << accumulate(count_results.begin(), count_results.end(), 0)
               << "\n";
+    }
 
     timer.reset();
   }

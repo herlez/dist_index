@@ -60,6 +60,20 @@ struct out_t {
 
 static out_t alxout;
 
+struct bench_out_t {
+  template <typename T>
+  bench_out_t& operator<<(T&& x) {
+    int world_rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+    std::filesystem::path log_path = "/tmp/alxbench" + std::to_string(world_rank) + std::string(".log");
+    std::ofstream out(log_path, std::ios::out | std::ios::app);
+    out << x;
+    return *this;
+  }
+};
+
+static bench_out_t benchout;
+
 // Calculate correct indexes [begin, end)
 std::tuple<size_t, size_t> slice_indexes(size_t global_size, size_t world_rank, size_t world_size) {
   if (world_size > global_size) {

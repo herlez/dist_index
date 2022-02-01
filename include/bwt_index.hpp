@@ -22,6 +22,7 @@ class bwt_index {
  private:
   alx::bwt const* m_bwt;
   alx::rank_query m_queries[2];
+  MPI_Win window;
 
  public:
   bwt_index() : m_bwt(nullptr) {}
@@ -30,6 +31,9 @@ class bwt_index {
   bwt_index(alx::bwt const& bwt) : m_bwt(&bwt) {}
 
   std::vector<size_t> occ_batched(std::vector<std::string> const& patterns) {
+    MPI_Win_create(&m_queries, sizeof(m_queries), sizeof(m_queries[0]), MPI_INFO_NULL, MPI_COMM_WORLD, &window);
+    MPI_Win_fence(0, window);
+
     std::vector<size_t> results;
     if (alx::mpi::my_rank() == 0) {
       results.reserve(patterns.size());
@@ -47,13 +51,14 @@ class bwt_index {
         results.push_back(m_queries[1].border.u64() - m_queries[0].border.u64());
       }
     }
+    MPI_Win_fence(0, window);
+    MPI_Win_free(&window);
+
     return results;
   }
 
   void occ_single(std::string const& pattern) {
-    MPI_Win window;
-    MPI_Win_create(&m_queries, sizeof(m_queries), sizeof(m_queries[0]), MPI_INFO_NULL, MPI_COMM_WORLD, &window);
-    MPI_Win_fence(0, window);
+    
 
     if (alx::mpi::my_rank() == 0) {
       for (size_t i = 0; i < sizeof(m_queries) / sizeof(m_queries[0]); ++i) {
@@ -71,10 +76,7 @@ class bwt_index {
         alx::io::alxout << "Send to " << target_pe << "\n";
       }
     }
-
     MPI_Win_fence(0, window);
-    MPI_Win_free(&window);
-
     update_outstanding_status();
     occ_single_distribute();
   }
@@ -86,12 +88,9 @@ class bwt_index {
     MPI_Allreduce(&local_finished, &global_finished, 1, MPI_C_BOOL, MPI_LAND, MPI_COMM_WORLD);
     if(global_finished) {alx::io::alxout << "Done.\n";}
 
-    // Open Window to write queries
-    MPI_Win window;
-    MPI_Win_create(&m_queries, sizeof(m_queries), sizeof(m_queries[0]), MPI_INFO_NULL, MPI_COMM_WORLD, &window);
-    MPI_Win_fence(0, window);
-
+  
     while (!global_finished) {
+      MPI_Win_fence(0, window);
       for (size_t i = 0; i < sizeof(m_queries) / sizeof(m_queries[0]); ++i) {
         alx::rank_query& query = m_queries[i];
         if (query.outstanding) {
@@ -135,10 +134,6 @@ class bwt_index {
       MPI_Allreduce(&local_finished, &global_finished, 1, MPI_C_BOOL, MPI_LAND, MPI_COMM_WORLD);
       if(global_finished) {alx::io::alxout << "Done.\n";}
     }
-
-    // Close Window to write queries
-    MPI_Win_fence(0, window);
-    MPI_Win_free(&window);
   }
 
   void update_outstanding_status() {
