@@ -47,12 +47,13 @@ namespace alx::io {
 struct out_t {
   template <typename T>
   out_t& operator<<(T&& x) {
+    /*
     int world_rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
     std::filesystem::path log_path = "/tmp/alxlog" + std::to_string(world_rank) + std::string(".log");
     std::ofstream out(log_path, std::ios::out | std::ios::app);
     out << x;
-    // log << x;
+    */
     return *this;
   }
 };
@@ -84,11 +85,26 @@ std::tuple<size_t, size_t> locate_slice(size_t global_index, size_t global_size,
 
   size_t chunk_size = global_size / world_size;
 
-  size_t rank = global_size / chunk_size;
+  size_t rank = global_index / chunk_size;
   rank = std::min(rank, world_size - 1);
 
-  size_t local_index = (rank != world_size - 1) ? global_index % chunk_size : global_index - (global_size - 1) * chunk_size;
+  size_t local_index = (rank != world_size - 1) ? global_index % chunk_size : global_index - (world_size - 1) * chunk_size;
+
+  // alxout << "global_index=" << global_index << " global_size=" << global_size << " world_size=" << world_size << " chunk_size=" << chunk_size << " rank=" << rank << " local_index=" << local_index << '\n';
   return {rank, local_index};
+}
+
+std::tuple<size_t, size_t> locate_bwt_slice(size_t global_index, size_t global_size, size_t world_size, size_t primary_index) {
+  if (global_index >= primary_index) {
+    global_index--;
+  }
+  return locate_slice(global_index, global_size, world_size);
+}
+
+template <class T, std::size_t N>
+std::ostream& operator<<(std::ostream& o, const std::array<T, N>& arr) {
+  std::copy(arr.cbegin(), arr.cend(), std::ostream_iterator<T>(o, " "));
+  return o;
 }
 
 std::vector<std::string> read_strings_line_by_line(std::filesystem::path const& path) {

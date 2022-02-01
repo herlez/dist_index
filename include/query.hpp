@@ -23,7 +23,7 @@ struct rank_query {
   }
 
   friend std::ostream &operator<<(std::ostream &os, const alx::rank_query query) {
-    return os << "[" << (int) query.pos_in_pattern << "]=" << std::string(query.pattern, query.pattern + query.pos_in_pattern) << " border=" << query.border;
+    return os << "[" << (int) query.pos_in_pattern << "]=" << std::string(query.pattern, query.pattern + query.pos_in_pattern) << " border=" << query.border << " outstanding=" << std::boolalpha << query.outstanding;
   }
 };
 

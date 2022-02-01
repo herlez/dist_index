@@ -25,6 +25,7 @@ class index_benchmark {
   benchmark_mode mode = benchmark_mode::from_bwt;
   std::filesystem::path input_path;
   std::filesystem::path patterns_path;
+  size_t num_patterns{std::numeric_limits<size_t>::max()};
 
  public:
   template <template <typename> typename t_index>
@@ -50,6 +51,11 @@ class index_benchmark {
     std::vector<std::string> patterns;
     if (world_rank == 0) {
       patterns = alx::io::load_patterns(patterns_path);
+      if (num_patterns != std::numeric_limits<size_t>::max()) {
+        patterns.resize(num_patterns);
+      } else {
+        num_patterns = patterns.size();
+      }
 
       alx::io::alxout << "patterns_path=" << patterns_path << " patterns_num=" << patterns.size();
       if (patterns.size() != 0) {
@@ -101,13 +107,15 @@ class index_benchmark {
 
     std::vector<size_t> count_results;
 
-
-    
     // Counting Queries
     timer.reset();
-    
-    patterns.resize(1); //REMOVE LATER
+
+    // patterns[0] = patterns[15];
+    // patterns.resize(1);
+
     count_results = r_index.occ_batched(patterns);
+    // for (auto i: count_results)
+    // std::cout << i << ' ';
 
     std::cout << " c_time=" << timer.get()
               << " c_sum=" << accumulate(count_results.begin(), count_results.end(), 0)
@@ -135,6 +143,9 @@ int main(int argc, char** argv) {
 
   unsigned int mode;
   cp.add_param_uint("mode", mode, "Mode: [0]:Text->Index [1]:BWT->Index [2]:Load Index from file");
+
+  cp.add_size_t('q', "num_queries", benchmark.num_patterns,
+                "Number of queries (default=all)");
 
   if (!cp.process(argc, argv)) {
     std::exit(EXIT_FAILURE);
