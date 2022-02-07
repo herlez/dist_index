@@ -78,8 +78,8 @@ class bwt {
       MPI_Barrier(MPI_COMM_WORLD);
       MPI_Exscan(m_first_row_starts.data(), m_exclusive_prefix_histogram.data(), 256, my_MPI_SIZE_T, MPI_SUM, MPI_COMM_WORLD);
 
-      alx::io::alxout << m_first_row_starts << "\n";
-      alx::io::alxout << m_exclusive_prefix_histogram << "\n";
+      //alx::io::alxout << m_first_row_starts << "\n";
+      //alx::io::alxout << m_exclusive_prefix_histogram << "\n";
     }
 
     // Broadcast start of runs in first row

@@ -26,6 +26,12 @@ int my_rank() {
   return rank;
 }
 
+int world_size() {
+  int world_size;
+  MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+  return world_size;
+}
+
 }  // namespace alx::mpi
 
 namespace alx::io {
@@ -46,7 +52,7 @@ namespace alx::io {
 
 struct out_t {
   template <typename T>
-  out_t& operator<<(T&& x) {
+  out_t& operator<<([[maybe_unused]] T&& x) {
     /*
     int world_rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
@@ -119,6 +125,19 @@ template <class T, std::size_t N>
 std::ostream& operator<<(std::ostream& o, const std::array<T, N>& arr) {
   std::copy(arr.cbegin(), arr.cend(), std::ostream_iterator<T>(o, " "));
   return o;
+}
+
+template<typename T>
+std::ostream& operator<< (std::ostream& out, const std::vector<T>& v) {
+    out << "{";
+    size_t last = v.size() - 1;
+    for(size_t i = 0; i < v.size(); ++i) {
+        out << v[i];
+        if (i != last) 
+            out << ", ";
+    }
+    out << "}";
+    return out;
 }
 
 std::vector<std::string> read_strings_line_by_line(std::filesystem::path const& path) {

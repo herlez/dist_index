@@ -1,6 +1,7 @@
 #pragma once
 #include <iostream>
 #include <tdc/uint/uint40.hpp>
+#include <mpi.h>
 
 namespace alx {
 
@@ -25,6 +26,20 @@ struct rank_query {
   friend std::ostream &operator<<(std::ostream &os, const alx::rank_query query) {
     return os << "[" << (int) query.pos_in_pattern << "]=" << std::string(query.pattern, query.pattern + query.pos_in_pattern) << " border=" << query.border << " outstanding=" << std::boolalpha << query.outstanding;
   }
+
+  static MPI_Datatype mpi_type() {
+    //Custom mpi data type for queries
+        MPI_Aint displacements[4] = {offsetof(rank_query, outstanding), offsetof(rank_query, pattern), offsetof(rank_query, pos_in_pattern), offsetof(rank_query, border)};
+        int block_lengths[4] = {1, 30, 1, 5};
+        MPI_Datatype types[4] = {MPI_C_BOOL, MPI_UNSIGNED_CHAR, MPI_UINT8_T, MPI_UNSIGNED_CHAR};
+        
+        MPI_Datatype custom_dt;
+
+        // 2- Create the type, and commit it
+        MPI_Type_create_struct(4, block_lengths, displacements, types, &custom_dt);
+        return custom_dt;
+  }
+
 };
 
 }  // namespace alx
