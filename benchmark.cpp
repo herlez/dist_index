@@ -72,9 +72,9 @@ class index_benchmark {
     alx::benchutil::timer timer;
     alx::benchutil::spacer spacer;
     alx::io::benchout << "RESULT"
-                    << " algo=" << algo
-                    << " mode=" << mode
-                    << " text=" << file_name;
+                      << " algo=" << algo
+                      << " mode=" << mode
+                      << " text=" << file_name;
 
     if (mode == benchmark_mode::from_text) {
       std::cerr << "Build from text not supported yet.\n";
@@ -101,24 +101,30 @@ class index_benchmark {
     }
 
     alx::io::benchout << " input_size=" << bwt.global_size()
-                    << " ds_time=" << timer.get()
-                    << " ds_mem=" << spacer.get()
-                    << " ds_mempeak=" << spacer.get_peak();
+                      << " ds_time=" << timer.get()
+                      << " ds_mem=" << spacer.get()
+                      << " ds_mempeak=" << spacer.get_peak();
 
     std::vector<size_t> count_results;
 
     // Counting Queries
     timer.reset();
-
-    //count_results = r_index.occ_one_by_one(patterns);
-    count_results = r_index.occ_batched(patterns);
+    if (algo == "fm_single") {
+      count_results = r_index.occ_one_by_one(patterns);
+    }
+    if (algo == "fm_batch") {
+      count_results = r_index.occ_batched(patterns);
+    }
+    if (algo == "fm_batch_preshared") {
+      count_results = r_index.occ_batched_preshared(patterns);
+    }
     // for (auto i: count_results)
     // std::cout << i << ' ';
 
-    if(world_rank == 0) {
-    alx::io::benchout << " c_time=" << timer.get()
-              << " c_sum=" << accumulate(count_results.begin(), count_results.end(), 0)
-              << "\n";
+    if (world_rank == 0) {
+      alx::io::benchout << " c_time=" << timer.get()
+                        << " c_sum=" << accumulate(count_results.begin(), count_results.end(), 0)
+                        << "\n";
     }
 
     timer.reset();
@@ -155,7 +161,9 @@ int main(int argc, char** argv) {
   benchmark.mode = static_cast<benchmark_mode>(mode);
 
   // benchmark.run<alx::r_index>("herlez");
-  benchmark.run<alx::bwt_index>("fm");
+  benchmark.run<alx::bwt_index>("fm_single");
+  benchmark.run<alx::bwt_index>("fm_batch");
+  benchmark.run<alx::bwt_index>("fm_batch_preshared");
 
   // Finalize the MPI environment.
   MPI_Finalize();
