@@ -53,13 +53,13 @@ namespace alx::io {
 struct out_t {
   template <typename T>
   out_t& operator<<([[maybe_unused]] T&& x) {
-    
+    /*
     int world_rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
     std::filesystem::path log_path = "./alxlog" + std::to_string(world_rank) + std::string(".log");
     std::ofstream out(log_path, std::ios::out | std::ios::app);
     out << x;
-    
+    */
     return *this;
   }
 };

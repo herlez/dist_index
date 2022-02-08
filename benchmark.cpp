@@ -110,9 +110,6 @@ class index_benchmark {
     // Counting Queries
     timer.reset();
 
-    // patterns[0] = patterns[15];
-    // patterns.resize(1);
-
     //count_results = r_index.occ_one_by_one(patterns);
     count_results = r_index.occ_batched(patterns);
     // for (auto i: count_results)

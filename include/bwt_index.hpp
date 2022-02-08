@@ -35,6 +35,8 @@ class bwt_index {
   std::vector<size_t> occ_batched(std::vector<std::string> const& patterns) {
     std::vector<size_t> results;
     if (alx::mpi::my_rank() == 0) {
+      //patterns[0] = patterns[16];
+      //patterns.resize(1);
       results.reserve(patterns.size());
     }
     // Answer queries in batch
@@ -97,7 +99,7 @@ class bwt_index {
   }
 
   void occ(std::vector<std::string> const& patterns) {
-    initialize_query(patterns);
+    initialize_queries(patterns);
     alx::io::alxout << '\n'
                     << m_queries << '\n';
 
@@ -109,6 +111,7 @@ class bwt_index {
         // Sort queries by (are they finished?, border)
         std::sort(m_queries.begin(), m_queries.end(), [](auto const& left, auto const& right) {
           if (left.pos_in_pattern == 0 && right.pos_in_pattern != 0) return true;
+          if (left.pos_in_pattern != 0 && right.pos_in_pattern == 0) return false;
           return (left.border < right.border);
         });
 
@@ -120,17 +123,18 @@ class bwt_index {
         }
         alx::io::alxout << "#SEND: " << counts_send << '\n';
 
+        // Define my counts for receiving (how many integers do I receive from each process?)
+        std::vector<int> counts_recv(alx::mpi::world_size());
+        MPI_Barrier(MPI_COMM_WORLD);
+        MPI_Alltoall(counts_send.data(), 1, MPI_INT, counts_recv.data(), 1, MPI_INT, MPI_COMM_WORLD);
+        alx::io::alxout << "#RECV: " << counts_recv << '\n';
+
         // Define my displacements for sending (where is located in the buffer each message to send?)
         std::vector<int> displacements_send(alx::mpi::world_size());
         std::exclusive_scan(counts_send.begin(), counts_send.end(), displacements_send.begin(), 0);
         alx::io::alxout << "DSEND: " << displacements_send << '\n';
 
-        // Define my counts for receiving (how many integers do I receive from each process?)
-        std::vector<int> counts_recv(alx::mpi::world_size());
-        alx::io::alxout << "rect with size: " << counts_recv.size() << '\n';
-        MPI_Alltoall(counts_send.data(), 1, MPI_INT, counts_recv.data(), 1, MPI_INT, MPI_COMM_WORLD);
-        alx::io::alxout << "rect with size: " << counts_recv.size() << '\n';
-        alx::io::alxout << "#RECV: " << counts_recv << '\n';
+        
 
         // Define my displacements for reception (where to store in buffer each message received?)
         std::vector<int> displacements_recv(alx::mpi::world_size());
@@ -145,33 +149,27 @@ class bwt_index {
 
         alx::io::alxout << m_queries << '\n';
       }
-
+      
       // Calculate
       {
         for (size_t i = 0; i < m_queries.size(); ++i) {
           auto& query = m_queries[i];
-          /*
+          
           while ((get_target_pe(query) == alx::mpi::my_rank()) && query.pos_in_pattern != 0) {
             query.pos_in_pattern--;
             query.border = m_bwt->next_border(query.border.u64(), query.cur_char());
             alx::io::alxout << "Calculated query[" << i << "]: " << query << "\n";
-          }*/
-
-          if (query.pos_in_pattern != 0) {
-            query.pos_in_pattern--;
-            query.border = m_bwt->next_border(query.border.u64(), query.cur_char());
-            alx::io::alxout << "Calculated query[" << i << "]: " << query << "\n";
-          }
+          }          
         }
       }
+      
       update_completed_queries();
-
       bool local_finished = m_queries.empty();
       MPI_Allreduce(&local_finished, &global_finished, 1, MPI_C_BOOL, MPI_LAND, MPI_COMM_WORLD);
     }
   }
 
-  void initialize_query(std::vector<std::string> const& patterns) {
+  void initialize_queries(std::vector<std::string> const& patterns) {
     alx::io::alxout << "Initializing queries..\n";
     m_queries.resize(patterns.size() * 2);
     m_finished_queries.clear();
