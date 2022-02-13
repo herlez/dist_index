@@ -28,7 +28,7 @@ class index_benchmark {
   size_t num_patterns{std::numeric_limits<size_t>::max()};
 
  public:
-  template <template <typename> typename t_index>
+  template <typename t_index>
   void run(std::string const& algo) {
     // Get the number of processes
     int world_size;
@@ -49,17 +49,18 @@ class index_benchmark {
 
     // Load queries on main node
     std::vector<std::string> patterns;
-    if (world_rank == 0) {
-      patterns = alx::io::load_patterns(patterns_path);
-      if (num_patterns != std::numeric_limits<size_t>::max()) {
-        patterns.resize(num_patterns);
-      } else {
-        num_patterns = patterns.size();
-      }
+    {
+      if (world_rank == 0) {
+        alx::benchutil::spacer spacer;
+        alx::benchutil::timer timer;
 
-      alx::io::benchout << "patterns_path=" << patterns_path << " patterns_num=" << patterns.size();
-      if (patterns.size() != 0) {
-        alx::io::benchout << " patterns_len=" << patterns.front().size() << "\n";
+        patterns = alx::io::load_patterns(patterns_path, num_patterns);
+        assert(patterns.size() <= num_patterns);
+
+        alx::io::benchout << "patterns_load_time=" << timer.get() << " mem=" << spacer.get() << " patterns_path=" << patterns_path << " patterns_num=" << patterns.size();
+        if (patterns.size() != 0) {
+          alx::io::benchout << " patterns_len=" << patterns.front().size() << "\n";
+        }
       }
     }
     MPI_Barrier(MPI_COMM_WORLD);
@@ -67,67 +68,81 @@ class index_benchmark {
     // Build Index
     alx::bwt bwt;
     t_index r_index;
-    std::string file_name = input_path.filename();
+    {
+      std::string file_name = input_path.filename();
 
-    alx::benchutil::timer timer;
-    alx::benchutil::spacer spacer;
-    alx::io::benchout << "RESULT"
-                      << " algo=" << algo
-                      << " mode=" << mode
-                      << " text=" << file_name;
+      alx::io::benchout << "RESULT"
+                        << " algo=" << algo
+                        << " num_pes=" << world_size
+                        << " mode=" << mode
+                        << " text=" << file_name;
 
-    if (mode == benchmark_mode::from_text) {
-      std::cerr << "Build from text not supported yet.\n";
-      return;
-    } else if (mode == benchmark_mode::from_bwt) {
-      std::filesystem::path last_row_path = input_path;
-      last_row_path += ".bwt";
-      std::filesystem::path primary_index_path = input_path;
-      primary_index_path += ".prm";
-      alx::io::alxout << "\n[" << world_rank << "/" << world_size << "]: read bwt from " << last_row_path << " and " << primary_index_path << "\n";
-      bwt = alx::bwt(last_row_path, primary_index_path, world_rank, world_size);
-      alx::io::alxout << "[" << world_rank << "/" << world_size << "]: I hold bwt from " << bwt.start_index() << " to " << bwt.end_index() << "\n";
+      alx::benchutil::timer timer;
+      alx::benchutil::spacer spacer;
+      spacer.reset_peak();
 
+      if (mode == benchmark_mode::from_text) {
+        std::cerr << "Build from text not supported yet.\n";
+        return;
+      } else if (mode == benchmark_mode::from_bwt) {
+        std::filesystem::path last_row_path = input_path;
+        last_row_path += ".bwt";
+        std::filesystem::path primary_index_path = input_path;
+        primary_index_path += ".prm";
+        alx::io::alxout << "\n[" << world_rank << "/" << world_size << "]: read bwt from " << last_row_path << " and " << primary_index_path << "\n";
+        bwt = alx::bwt(last_row_path, primary_index_path);
+        alx::io::alxout << "[" << world_rank << "/" << world_size << "]: I hold bwt from " << bwt.start_index() << " to " << bwt.end_index() << "\n";
+
+        alx::io::benchout << " bwt_time=" << timer.get_and_reset()
+                          << " bwt_mem=" << spacer.get();
+
+        bwt.build_rank();
+        bwt.free_bwt();
+        r_index = t_index(bwt);
+
+      } else if (mode == benchmark_mode::from_index) {
+        std::cerr << "Build from index file not supported yet.\n";
+        return;
+      } else {
+        std::cerr << "Unknown benchmark mode. Must be between 0 and 2.\n";
+        return;
+      }
+
+      alx::io::benchout << " input_size=" << bwt.global_size()
+                        << " ds_time=" << timer.get_and_reset()
+                        << " ds_mem=" << spacer.get()
+                        << " ds_mempeak=" << spacer.get_peak();
+    }
+    // Queries
+    {
+      alx::benchutil::spacer spacer;
+      spacer.reset_peak();
+      alx::benchutil::timer timer;
+
+      std::vector<size_t> count_results;
+
+      // Counting Queries
       timer.reset();
-      spacer.reset();
-      r_index = t_index(bwt);
+      if (algo == "fm_single") {
+        count_results = r_index.occ_one_by_one(patterns);
+      }
+      if (algo == "fm_batch") {
+        count_results = r_index.occ_batched(patterns);
+      }
+      if (algo == "fm_batch_preshared") {
+        // count_results = r_index.occ_batched_preshared(patterns);
+      }
+      // for (auto i: count_results)
+      // std::cout << i << ' ';
 
-    } else if (mode == benchmark_mode::from_index) {
-      std::cerr << "Build from index file not supported yet.\n";
-      return;
-    } else {
-      std::cerr << "Unknown benchmark mode. Must be between 0 and 2.\n";
-      return;
+      if (world_rank == 0) {
+        alx::io::benchout << " c_time=" << timer.get_and_reset()
+                          << " c_mem=" << spacer.get()
+                          << " c_mempeak=" << spacer.get_peak()
+                          << " c_sum=" << accumulate(count_results.begin(), count_results.end(), 0)
+                          << "\n";
+      }
     }
-
-    alx::io::benchout << " input_size=" << bwt.global_size()
-                      << " ds_time=" << timer.get()
-                      << " ds_mem=" << spacer.get()
-                      << " ds_mempeak=" << spacer.get_peak();
-
-    std::vector<size_t> count_results;
-
-    // Counting Queries
-    timer.reset();
-    if (algo == "fm_single") {
-      count_results = r_index.occ_one_by_one(patterns);
-    }
-    if (algo == "fm_batch") {
-      count_results = r_index.occ_batched(patterns);
-    }
-    if (algo == "fm_batch_preshared") {
-      count_results = r_index.occ_batched_preshared(patterns);
-    }
-    // for (auto i: count_results)
-    // std::cout << i << ' ';
-
-    if (world_rank == 0) {
-      alx::io::benchout << " c_time=" << timer.get()
-                        << " c_sum=" << accumulate(count_results.begin(), count_results.end(), 0)
-                        << "\n";
-    }
-
-    timer.reset();
   }
 };
 
@@ -150,7 +165,7 @@ int main(int argc, char** argv) {
   unsigned int mode;
   cp.add_param_uint("mode", mode, "Mode: [0]:Text->Index [1]:BWT->Index [2]:Load Index from file");
 
-  cp.add_size_t('q', "num_queries", benchmark.num_patterns,
+  cp.add_size_t('q', "num_patterns", benchmark.num_patterns,
                 "Number of queries (default=all)");
 
   if (!cp.process(argc, argv)) {
@@ -162,8 +177,8 @@ int main(int argc, char** argv) {
 
   // benchmark.run<alx::r_index>("herlez");
   benchmark.run<alx::bwt_index>("fm_single");
-  benchmark.run<alx::bwt_index>("fm_batch");
-  benchmark.run<alx::bwt_index>("fm_batch_preshared");
+  // benchmark.run<alx::bwt_index>("fm_batch");
+  // benchmark.run<alx::bwt_index>("fm_batch_preshared");
 
   // Finalize the MPI environment.
   MPI_Finalize();

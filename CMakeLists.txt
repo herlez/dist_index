@@ -52,7 +52,7 @@ target_include_directories(tlx PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/extlib/tlx/tlx
 add_executable(bench benchmark.cpp)
 target_compile_options(bench PRIVATE -Wall -Wextra -pedantic -O3 -DNDEBUG)
 target_include_directories(bench PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(bench PRIVATE alx_rindex tlx malloc_count MPI::MPI_CXX)
+target_link_libraries(bench PRIVATE alx_rindex tlx MPI::MPI_CXX malloc_count)
 
 add_executable(gen_patterns genpatterns.c)
 target_compile_options(gen_patterns PRIVATE -Wall -Wextra -pedantic -O3 -DNDEBUG)

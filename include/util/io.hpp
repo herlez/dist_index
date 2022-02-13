@@ -269,14 +269,14 @@ size_t get_patterns_length(std::string header) {
   return n;
 }
 
-std::vector<std::string> load_patterns(std::filesystem::path path) {
+std::vector<std::string> load_patterns(std::filesystem::path path, size_t num_patterns = std::numeric_limits<size_t>::max()) {
   std::vector<std::string> patterns;
   std::ifstream ifs(path);
 
   std::string header;
   std::getline(ifs, header);
 
-  size_t n = get_number_of_patterns(header);
+  size_t n = std::min(get_number_of_patterns(header), num_patterns);
   size_t m = get_patterns_length(header);
 
   // extract patterns from file and search them in the index
