@@ -130,7 +130,7 @@ class index_benchmark {
         count_results = r_index.occ_batched(patterns);
       }
       if (algo == "fm_batch_preshared") {
-        // count_results = r_index.occ_batched_preshared(patterns);
+        count_results = r_index.occ_batched_preshared(patterns);
       }
       // for (auto i: count_results)
       // std::cout << i << ' ';
@@ -177,8 +177,8 @@ int main(int argc, char** argv) {
 
   // benchmark.run<alx::r_index>("herlez");
   benchmark.run<alx::bwt_index>("fm_single");
-  // benchmark.run<alx::bwt_index>("fm_batch");
-  // benchmark.run<alx::bwt_index>("fm_batch_preshared");
+  benchmark.run<alx::bwt_index>("fm_batch");
+  benchmark.run<alx::bwt_index>("fm_batch_preshared");
 
   // Finalize the MPI environment.
   MPI_Finalize();

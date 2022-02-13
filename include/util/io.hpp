@@ -121,23 +121,30 @@ std::tuple<size_t, size_t> locate_bwt_slice(size_t global_index, size_t global_s
   return locate_slice(global_index, global_size, world_size);
 }
 
+template <class T>
+std::ostream& operator<<(std::ostream& o, const std::span<T>& span) {
+  std::copy(span.begin(), span.end(), std::ostream_iterator<T>(o, " "));
+
+  return o;
+}
+
 template <class T, std::size_t N>
 std::ostream& operator<<(std::ostream& o, const std::array<T, N>& arr) {
   std::copy(arr.cbegin(), arr.cend(), std::ostream_iterator<T>(o, " "));
   return o;
 }
 
-template<typename T>
-std::ostream& operator<< (std::ostream& out, const std::vector<T>& v) {
-    out << "{";
-    size_t last = v.size() - 1;
-    for(size_t i = 0; i < v.size(); ++i) {
-        out << v[i];
-        if (i != last) 
-            out << ", ";
-    }
-    out << "}";
-    return out;
+template <typename T>
+std::ostream& operator<<(std::ostream& out, const std::vector<T>& v) {
+  out << "{";
+  size_t last = v.size() - 1;
+  for (size_t i = 0; i < v.size(); ++i) {
+    out << v[i];
+    if (i != last)
+      out << ", ";
+  }
+  out << "}";
+  return out;
 }
 
 std::vector<std::string> read_strings_line_by_line(std::filesystem::path const& path) {
