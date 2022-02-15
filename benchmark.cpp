@@ -57,7 +57,10 @@ class index_benchmark {
         patterns = alx::io::load_patterns(patterns_path, num_patterns);
         assert(patterns.size() <= num_patterns);
 
-        alx::io::benchout << "patterns_load_time=" << timer.get() << " mem=" << spacer.get() << " patterns_path=" << patterns_path << " patterns_num=" << patterns.size();
+        alx::io::benchout << "patterns_load_time=" << timer.get() 
+                          //<< " mem=" << spacer.get() 
+                          << " patterns_path=" << patterns_path 
+                          << " patterns_num=" << patterns.size();
         if (patterns.size() != 0) {
           alx::io::benchout << " patterns_len=" << patterns.front().size() << "\n";
         }
@@ -94,7 +97,8 @@ class index_benchmark {
         alx::io::alxout << "[" << world_rank << "/" << world_size << "]: I hold bwt from " << bwt.start_index() << " to " << bwt.end_index() << "\n";
 
         alx::io::benchout << " bwt_time=" << timer.get_and_reset()
-                          << " bwt_mem=" << spacer.get();
+                          //<< " bwt_mem=" << spacer.get()
+                          ;
 
         bwt.build_rank();
         bwt.free_bwt();
@@ -110,8 +114,9 @@ class index_benchmark {
 
       alx::io::benchout << " input_size=" << bwt.global_size()
                         << " ds_time=" << timer.get_and_reset()
-                        << " ds_mem=" << spacer.get()
-                        << " ds_mempeak=" << spacer.get_peak();
+                        //<< " ds_mem=" << spacer.get()
+                        //<< " ds_mempeak=" << spacer.get_peak()
+                        ;
     }
     // Queries
     {
@@ -137,8 +142,9 @@ class index_benchmark {
 
       if (world_rank == 0) {
         alx::io::benchout << " c_time=" << timer.get_and_reset()
-                          << " c_mem=" << spacer.get()
-                          << " c_mempeak=" << spacer.get_peak()
+                          << " num_patterns=" << patterns.size()
+                          //<< " c_mem=" << spacer.get()
+                          //<< " c_mempeak=" << spacer.get_peak()
                           << " c_sum=" << accumulate(count_results.begin(), count_results.end(), 0)
                           << "\n";
       }
@@ -176,7 +182,7 @@ int main(int argc, char** argv) {
   benchmark.mode = static_cast<benchmark_mode>(mode);
 
   // benchmark.run<alx::r_index>("herlez");
-  benchmark.run<alx::bwt_index>("fm_single");
+  //benchmark.run<alx::bwt_index>("fm_single");
   benchmark.run<alx::bwt_index>("fm_batch");
   benchmark.run<alx::bwt_index>("fm_batch_preshared");
 

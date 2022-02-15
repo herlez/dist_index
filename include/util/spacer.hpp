@@ -1,9 +1,9 @@
 #pragma once
 
-#include <malloc_count.h>
+//#include <malloc_count.h>
 
 namespace alx::benchutil {
-
+/*
 class spacer {
  private:
   double m_begin;
@@ -20,7 +20,7 @@ class spacer {
   }
 
   int64_t get_and_reset() {
-    auto before = m_begin;  
+    auto before = m_begin;
     m_begin = malloc_count_current();
     return m_begin - before;
   }
@@ -31,6 +31,30 @@ class spacer {
 
   void reset_peak() {
     malloc_count_reset_peak();
+  }
+};
+*/
+
+class spacer {
+ public:
+  spacer() {}
+
+  void reset() {
+  }
+
+  int64_t get() {
+    return 0;
+  }
+
+  int64_t get_and_reset() {
+    return 0;
+  }
+
+  int64_t get_peak() {
+    return 0;
+  }
+
+  void reset_peak() {
   }
 };
 }  // namespace alx::benchutil

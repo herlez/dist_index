@@ -144,7 +144,7 @@ class bwt_index {
       std::vector<alx::rank_query> finished_queries = occ<alx::rank_query>(single_pattern);
 
       if (alx::mpi::my_rank() == 0) {
-        assert(finished_queries[0].pos_in_pattern == 0 && finished_queries[1].pos_in_pattern == 0);
+        assert(finished_queries[0].m_pos_in_pattern == 0 && finished_queries[1].m_pos_in_pattern == 0);
         assert(finished_queries.size() == 2 * single_pattern.size());
         size_t left, right;
         std::tie(left, right) = std::minmax(finished_queries[0].m_border.u64(), finished_queries[1].m_border.u64());
