@@ -7,8 +7,6 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <string>
-#include <vector>
 #include <wavelet_tree/wavelet_tree.hpp>
 
 #include "util/io.hpp"
@@ -163,19 +161,26 @@ class bwt {
   int world_rank() const {
     return m_world_rank;
   }
-  alx::ustring::value_type operator[](size_t i) const {
-    return m_wm->operator[](i);
+  /*size_t last_row_size() {
+    return m_last_row.size();
   }
+  alx::ustring::value_type access_bwt(size_t i) const {
+    return m_last_row[i];
+  }
+  alx::ustring::value_type access_wm(size_t i) const {
+    return m_wm->operator[](i);
+  }*/
   size_t primary_index() const {
     return m_primary_index;
-  }
-  size_t prev_occ(unsigned char c) const {
-    return m_exclusive_prefix_histogram[c];
   }
 
   // Return size of bwt slice.
   size_t size() const {
     return m_end_index - m_start_index;
+  }
+
+  size_t local_rank(size_t local_pos, unsigned char c) const {
+    return m_wm->rank(local_pos, c);
   }
 
   size_t global_rank(size_t global_pos, unsigned char c) const {
@@ -184,7 +189,7 @@ class bwt {
     std::tie(slice, local_pos) = alx::io::locate_bwt_slice(global_pos, m_global_size, m_world_size, m_primary_index);
     assert(slice == m_world_rank);
     // alx::io::alxout << "Answering rank. global_pos=" << global_pos << " local_pos=" << local_pos << " world_size=" << m_world_size << " c=" << c << "\n";
-    return m_exclusive_prefix_histogram[c] + m_wm->rank(local_pos, c);
+    return m_exclusive_prefix_histogram[c] + local_rank(local_pos, c);
   }
 
   size_t next_border(size_t global_pos, unsigned char c) const {
@@ -199,7 +204,14 @@ class bwt {
     alx::ustring str;
     std::swap(m_last_row, str);
   }
-  
 
+  template<typename t_query>
+  int get_target_pe(t_query const& query) const {
+    if (query.m_pos_in_pattern == 0) {
+      return 0;
+    } else {
+      return std::get<0>(alx::io::locate_bwt_slice(query.m_border.u64(), m_global_size, m_world_size, m_primary_index));
+    }
+  }
 };
 }  // namespace alx

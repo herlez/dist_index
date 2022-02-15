@@ -7,8 +7,8 @@
 #include <string>
 
 #include "include/bwt.hpp"
+//#include "include/bwt_rle.hpp"
 #include "include/bwt_index.hpp"
-#include "include/r_index_alx.hpp"
 #include "include/util/io.hpp"
 #include "include/util/spacer.hpp"
 #include "include/util/timer.hpp"
@@ -28,7 +28,7 @@ class index_benchmark {
   size_t num_patterns{std::numeric_limits<size_t>::max()};
 
  public:
-  template <typename t_index>
+  template <typename t_bwt, typename t_index>
   void run(std::string const& algo) {
     // Get the number of processes
     int world_size;
@@ -69,7 +69,7 @@ class index_benchmark {
     MPI_Barrier(MPI_COMM_WORLD);
 
     // Build Index
-    alx::bwt bwt;
+    t_bwt bwt;
     t_index r_index;
     {
       std::string file_name = input_path.filename();
@@ -93,7 +93,7 @@ class index_benchmark {
         std::filesystem::path primary_index_path = input_path;
         primary_index_path += ".prm";
         alx::io::alxout << "\n[" << world_rank << "/" << world_size << "]: read bwt from " << last_row_path << " and " << primary_index_path << "\n";
-        bwt = alx::bwt(last_row_path, primary_index_path);
+        bwt = t_bwt(last_row_path, primary_index_path);
         alx::io::alxout << "[" << world_rank << "/" << world_size << "]: I hold bwt from " << bwt.start_index() << " to " << bwt.end_index() << "\n";
 
         alx::io::benchout << " bwt_time=" << timer.get_and_reset()
@@ -182,9 +182,13 @@ int main(int argc, char** argv) {
   benchmark.mode = static_cast<benchmark_mode>(mode);
 
   // benchmark.run<alx::r_index>("herlez");
-  //benchmark.run<alx::bwt_index>("fm_single");
-  benchmark.run<alx::bwt_index>("fm_batch");
-  benchmark.run<alx::bwt_index>("fm_batch_preshared");
+  //benchmark.run<alx::bwt, alx::bwt_index>("fm_single");
+  benchmark.run<alx::bwt, alx::bwt_index<alx::bwt>>("fm_batch");
+  benchmark.run<alx::bwt, alx::bwt_index<alx::bwt>>("fm_batch_preshared");
+
+  //benchmark.run<alx::bwt_rle, alx::bwt_index>("r_batch");
+  //benchmark.run<alx::bwt_rle, alx::bwt_index>(r_batch);
+  //benchmark.run<alx::bwt_rle, alx::bwt_index>(r_batch);
 
   // Finalize the MPI environment.
   MPI_Finalize();

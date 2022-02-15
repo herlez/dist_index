@@ -48,15 +48,16 @@ class concatenated_strings {
   std::vector<uint32_t> starts;
 };
 
+template <typename t_bwt>
 class bwt_index {
  private:
-  alx::bwt const* m_bwt;
+  t_bwt const* m_bwt;
 
  public:
   bwt_index() : m_bwt(nullptr) {}
 
   // Load partial bwt from bwt and primary index file.
-  bwt_index(alx::bwt const& bwt) : m_bwt(&bwt) {}
+  bwt_index(t_bwt const& bwt) : m_bwt(&bwt) {}
 
   std::vector<size_t> occ_batched_preshared(std::vector<std::string> const& patterns) {
     // Build concatenated string and share between PEs
@@ -183,7 +184,7 @@ class bwt_index {
         // Define my counts for sending (how many integers do I send to each process?)
         std::vector<int> counts_send(alx::mpi::world_size());
         for (size_t i = 0; i < queries.size(); ++i) {
-          int target_pe = get_target_pe(queries[i]);
+          int target_pe = m_bwt->get_target_pe(queries[i]);
           ++counts_send[target_pe];
         }
         alx::io::alxout << "#SEND: " << counts_send << '\n';
@@ -217,7 +218,7 @@ class bwt_index {
         for (size_t i = 0; i < queries.size(); ++i) {
           auto& query = queries[i];
 
-          while ((get_target_pe(query) == alx::mpi::my_rank()) && query.m_pos_in_pattern != 0) {
+          while ((m_bwt->get_target_pe(query) == alx::mpi::my_rank()) && query.m_pos_in_pattern != 0) {
             query.m_pos_in_pattern--;
 
             if constexpr (std::is_same<t_query, alx::rank_query_information>::value) {
@@ -265,20 +266,6 @@ class bwt_index {
     return queries;
   }
 
-  int get_target_pe(rank_query const& query) {
-    if (query.m_pos_in_pattern == 0) {
-      return 0;
-    } else {
-      return std::get<0>(alx::io::locate_bwt_slice(query.m_border.u64(), m_bwt->global_size(), m_bwt->world_size(), m_bwt->primary_index()));
-    }
-  }
-  int get_target_pe(rank_query_information const& query) {
-    if (query.m_pos_in_pattern == 0) {
-      return 0;
-    } else {
-      return std::get<0>(alx::io::locate_bwt_slice(query.m_border.u64(), m_bwt->global_size(), m_bwt->world_size(), m_bwt->primary_index()));
-    }
-  }
 };
 
 }  // namespace alx
