@@ -7,7 +7,7 @@
 #include <string>
 
 #include "include/bwt.hpp"
-//#include "include/bwt_rle.hpp"
+#include "include/bwt_rle.hpp"
 #include "include/bwt_index.hpp"
 #include "include/util/io.hpp"
 #include "include/util/spacer.hpp"
@@ -128,13 +128,13 @@ class index_benchmark {
 
       // Counting Queries
       timer.reset();
-      if (algo == "fm_single") {
+      if (algo == "fm_single" | algo == "r_single") {
         count_results = r_index.occ_one_by_one(patterns);
       }
-      if (algo == "fm_batch") {
+      if (algo == "fm_batch" | algo == "r_batch") {
         count_results = r_index.occ_batched(patterns);
       }
-      if (algo == "fm_batch_preshared") {
+      if (algo == "fm_batch_preshared" || algo == "r_batch_preshared") {
         count_results = r_index.occ_batched_preshared(patterns);
       }
       // for (auto i: count_results)
@@ -184,11 +184,11 @@ int main(int argc, char** argv) {
   // benchmark.run<alx::r_index>("herlez");
   //benchmark.run<alx::bwt, alx::bwt_index>("fm_single");
   benchmark.run<alx::bwt, alx::bwt_index<alx::bwt>>("fm_batch");
-  benchmark.run<alx::bwt, alx::bwt_index<alx::bwt>>("fm_batch_preshared");
+  //benchmark.run<alx::bwt, alx::bwt_index<alx::bwt>>("fm_batch_preshared");
 
-  //benchmark.run<alx::bwt_rle, alx::bwt_index>("r_batch");
-  //benchmark.run<alx::bwt_rle, alx::bwt_index>(r_batch);
-  //benchmark.run<alx::bwt_rle, alx::bwt_index>(r_batch);
+  //benchmark.run<alx::bwt_rle, alx::bwt_index<alx::bwt_rle>>("r_single");
+  benchmark.run<alx::bwt_rle, alx::bwt_index<alx::bwt_rle>>("r_batch");
+  //benchmark.run<alx::bwt_rle, alx::bwt_index<alx::bwt_rle>>("r_preshared");
 
   // Finalize the MPI environment.
   MPI_Finalize();

@@ -24,7 +24,7 @@ class bwt {
   alx::ustring m_last_row;                               // last row bwt matrix
   size_t m_primary_index;                                // index of implicit $ in last row
   std::array<size_t, 256> m_exclusive_prefix_histogram;  // histogram of text of previous PEs
-  std::array<size_t, 256> m_first_row_starts;            // positions where the character runs start in F
+  std::array<size_t, 256> m_first_row_starts;            // positions where the character runs start in global F
 
   using wm_type = decltype(pasta::make_wm<pasta::BitVector>(alx::ustring::const_iterator{}, alx::ustring::const_iterator{}, 256));
   std::unique_ptr<wm_type> m_wm;  // wavelet tree to support rank
@@ -161,13 +161,20 @@ class bwt {
   int world_rank() const {
     return m_world_rank;
   }
+  std::array<size_t, 256> exclusive_prefix_histogram() const {
+    return m_exclusive_prefix_histogram;
+  }
+  
+  std::array<size_t, 256> first_row_starts() const {
+    return m_first_row_starts;
+  }
   /*size_t last_row_size() {
     return m_last_row.size();
-  }
+  }*/
   alx::ustring::value_type access_bwt(size_t i) const {
     return m_last_row[i];
   }
-  alx::ustring::value_type access_wm(size_t i) const {
+  /*alx::ustring::value_type access_wm(size_t i) const {
     return m_wm->operator[](i);
   }*/
   size_t primary_index() const {
@@ -193,6 +200,7 @@ class bwt {
   }
 
   size_t next_border(size_t global_pos, unsigned char c) const {
+    //if(global_pos >= m_primary_index) {--global_pos;} <- maybe add?
     return m_first_row_starts[c] + global_rank(global_pos + 1, c);
   }
 

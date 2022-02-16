@@ -7,8 +7,11 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <tdc/pred/index.hpp>
+#include <tdc/uint/uint40.hpp>
 #include <wavelet_tree/wavelet_tree.hpp>
 
+#include "bwt.hpp"
 #include "util/io.hpp"
 
 namespace alx {
@@ -21,133 +24,79 @@ class bwt_rle {
   int m_world_size;      // number of PEs
   int m_world_rank;      // PE number
 
-  alx::ustring m_last_row_rle;                           // last row bwt matrix
+  alx::ustring m_run_letters;                            // last row bwt matrix
   size_t m_primary_index;                                // index of implicit $ in last row
   std::array<size_t, 256> m_exclusive_prefix_histogram;  // histogram of text of previous PEs
-  std::array<size_t, 256> m_first_row_starts;            // positions where the character runs start in F
+  std::array<size_t, 256> m_first_row_starts;            // positions where the character runs start in global F
 
   using wm_type = decltype(pasta::make_wm<pasta::BitVector>(alx::ustring::const_iterator{}, alx::ustring::const_iterator{}, 256));
-  std::unique_ptr<wm_type> m_wm;  // wavelet tree to support rank
+  std::unique_ptr<wm_type> m_run_letters_wm;  // wavelet tree to support rank
 
   // new in bwt_rle:
-  std::vector<tdc::uint40_t> m_run_starts;  // stored run start positions
-  tdc::pred::Index<t_word> m_pred;          // predecessor ds for run starts
-  std::array<std::vector<t_word>, 256> m_run_lengths;  //stores prefix sum over length of all sigma-run, sorted by sigma
-  std::array<t_word, 257> m_char_sum;                  //
+  std::vector<tdc::uint40_t> m_run_starts;                    // stored run start positions
+  tdc::pred::Index<tdc::uint40_t> m_pred;                     // predecessor ds for run starts
+  std::array<std::vector<tdc::uint40_t>, 256> m_run_lengths;  // stores prefix sum over length of all sigma-run, sorted by sigma
+                                                              // std::array<tdc::uint40_t, 257> m_char_sum;                  equivalent to m_first_row_starts
 
  public:
   bwt_rle() : m_global_size{0}, m_start_index{0}, m_end_index{0} {}
 
   // Load partial bwt from bwt and primary index file.
   bwt_rle(std::filesystem::path const& last_row_path, std::filesystem::path const& primary_index_path) {
-    MPI_Comm_size(MPI_COMM_WORLD, &m_world_size);
-    MPI_Comm_rank(MPI_COMM_WORLD, &m_world_rank);
-
-    // If file does not exist, return empty string.
-    if (!std::filesystem::exists(last_row_path)) {
-      alx::io::alxout << last_row_path << " does not exist.";
-      return;
-    }
-    if (!std::filesystem::exists(primary_index_path)) {
-      alx::io::alxout << primary_index_path << " does not exist.";
-      return;
-    }
-
-    // Read primary index.
-    {
-      std::ifstream in(primary_index_path, std::ios::binary);
-      in.read(reinterpret_cast<char*>(&m_primary_index), sizeof(m_primary_index));
-    }
-    // Read last row.
-    {
-      m_global_size = std::filesystem::file_size(last_row_path);
-      std::tie(m_start_index, m_end_index) = alx::io::slice_indexes(m_global_size, m_world_rank, m_world_size);
-
-      MPI_File handle;
-      if (MPI_File_open(MPI_COMM_WORLD, last_row_path.c_str(), MPI_MODE_RDONLY, MPI_INFO_NULL, &handle) != MPI_SUCCESS) {
-        std::cout << "Failure in opening the file.\n";
-        MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
-      }
-      m_last_row.resize(size());
-      MPI_File_read_at_all(handle, m_start_index, m_last_row.data(), size(), MPI_CHAR, MPI_STATUS_IGNORE);
-      MPI_File_close(&handle);
-    }
-
-    // Build local histogram. Use m_first_row_starts temporarily
-    {
-      m_exclusive_prefix_histogram.fill(0);
-      m_first_row_starts.fill(0);
-      for (char c : m_last_row) {
-        ++m_first_row_starts[c];
-      }
-      // Exclusive scan histogram
-      MPI_Barrier(MPI_COMM_WORLD);
-      MPI_Exscan(m_first_row_starts.data(), m_exclusive_prefix_histogram.data(), 256, my_MPI_SIZE_T, MPI_SUM, MPI_COMM_WORLD);
-
-      // alx::io::alxout << m_first_row_starts << "\n";
-      // alx::io::alxout << m_exclusive_prefix_histogram << "\n";
-    }
-
-    // Broadcast start of runs in first row
-    // Last PE: Add exclusive prefix histogram to local histogram to get global histogram
-    {
-      if (m_world_rank == m_world_size - 1) {
-        for (size_t i = 0; i < m_first_row_starts.size(); ++i) {
-          m_first_row_starts[i] += m_exclusive_prefix_histogram[i];
-        }
-      }
-      // Exclusive scan histogram to get starting positions
-      std::exclusive_scan(m_first_row_starts.begin(), m_first_row_starts.end(), m_first_row_starts.begin(), 0);
-      MPI_Bcast(m_first_row_starts.data(), m_first_row_starts.size(), my_MPI_SIZE_T, m_world_size - 1, MPI_COMM_WORLD);
-
-      alx::io::alxout << m_first_row_starts << "\n";
-    }
+    alx::bwt bwt(last_row_path, primary_index_path);
+    build_struct(bwt);
   }
 
   // Calulate partial bwt from distributed suffix array and distributed text.
+
   template <typename t_text_container, typename t_sa_container>
   bwt_rle(t_text_container const& text_slice, t_sa_container const& sa_slice, size_t text_size, int world_rank, int world_size) {
-    m_world_size = world_size;
-    m_world_rank = world_rank;
-    std::tie(m_start_index, m_end_index) = alx::io::slice_indexes(text_size, world_rank, world_size);
+    alx::bwt bwt(sa_slice, text_size, world_rank, world_size);
+    build_struct(bwt);
+  }
 
-    assert(text_slice.size() == sa_slice.size());
+  void build_struct(alx::bwt const& input_bwt) {
+    m_global_size = input_bwt.global_size();
+    m_start_index = input_bwt.start_index();
+    m_end_index = input_bwt.end_index();
+    m_world_size = input_bwt.world_size();
+    m_world_rank = input_bwt.world_rank();
+    m_primary_index = input_bwt.primary_index();
+    m_exclusive_prefix_histogram = input_bwt.exclusive_prefix_histogram();
+    m_first_row_starts = input_bwt.first_row_starts();
 
-    m_last_row.reserve(text_slice.size());
-    if (world_rank == 0) {
-      m_last_row.push_back(text_slice.back());  // text[0] = imaginary $
-    }
+    // Build m_run_letters, m_run_starts and m_run_lengths
+    {
+      // Prepare m_run_length
+      for (size_t i = 0; i < 256; ++i) {
+        m_run_lengths[i].push_back(0);
+      }
+      // Build data structure
+      for (size_t run_start = 0; run_start < input_bwt.size();) {
+        unsigned char run_letter = input_bwt.access_bwt(run_start);
+        m_run_starts.push_back(run_start);
+        m_run_letters.push_back(run_letter);
 
-    // Open suffix array for mpi
-    MPI_Win window;
-    MPI_Win_create(text_slice.data(), text_slice.size() * sizeof(sa_slice.size_type), sizeof(sa_slice.size_type), MPI_INFO_NULL, MPI_COMM_WORLD, &window);
-    MPI_Win_fence(0, window);
-    m_primary_index = 0;
-    for (size_t i{0}; i < sa_slice.size(); ++i) {
-      if (sa_slice[i] == 0) [[unlikely]] {
-        m_primary_index = m_start_index + i;
-      } else {
-        size_t requested_global_index = sa_slice[i] - 1;
-        size_t target_rank;  // PE# in which the char lies
-        size_t local_index;  // index in PE at which char lies
-        std::tie(target_rank, local_index) = alx::io::locate_slice(requested_global_index, text_size, world_size);
-
-        char last_row_character;
-        if (target_rank == world_rank) {
-          last_row_character = text_slice[local_index];
-        } else {
-          MPI_Get(&last_row_character, 1, MPI_CHAR, target_rank, local_index, 1, MPI_CHAR, window);
+        size_t run_end = run_start + 1;
+        while (run_end < input_bwt.size() && input_bwt.access_bwt(run_end) == run_letter) {
+          ++run_end;
         }
-        m_last_row[i] = last_row_character;
+        m_run_lengths[run_letter].push_back(m_run_lengths[run_letter].back() + run_end - run_start);
+        run_start = run_end;
+      }
+      m_run_starts.shrink_to_fit();
+      for (auto& a : m_run_lengths) {
+        a.shrink_to_fit();
       }
     }
-    MPI_Win_fence(0, window);
-    MPI_Win_free(&window);
-
-    // Share primary index
-    size_t shared_primary_index = 0;
-    MPI_Allreduce(&m_primary_index, &shared_primary_index, 1, my_MPI_SIZE_T, MPI_SUM, MPI_COMM_WORLD);
-    m_primary_index = shared_primary_index;
+    // Build predecessor ds
+    {
+      m_pred = tdc::pred::Index<tdc::uint40_t>(m_run_starts.data(), m_run_starts.size(), 7);
+    }
+    // Build wavelet tree
+    {
+      m_run_letters_wm = std::make_unique<wm_type>(m_run_letters.begin(), m_run_letters.end(), 256);
+    }
   }
 
   // Getter
@@ -167,10 +116,10 @@ class bwt_rle {
     return m_world_rank;
   }
   /*size_t last_row_size() {
-    return m_last_row.size();
+    return m_run_letters.size();
   }
   alx::ustring::value_type access_bwt(size_t i) const {
-    return m_last_row[i];
+    return m_run_letters[i];
   }
   alx::ustring::value_type access_wm(size_t i) const {
     return m_wm->operator[](i);
@@ -184,8 +133,22 @@ class bwt_rle {
     return m_end_index - m_start_index;
   }
 
+  size_t run_rank(unsigned char c, size_t i) const {
+    //return m_run_letters_wt.rank(i, c);
+    return m_run_letters_wm->rank(i+1, c);
+  }
+
+  size_t pred(size_t i) const {
+    return m_pred.predecessor(m_run_starts.data(), m_run_starts.size(), i).pos;
+  }
+
   size_t local_rank(size_t local_pos, unsigned char c) const {
-    return m_wm->rank(local_pos, c);
+    size_t kth_run = pred(local_pos);
+    size_t run_start = m_run_starts[kth_run].u64();
+    size_t num_c_run = run_rank(c, kth_run - 1);
+    unsigned char run_symbol = m_run_letters[kth_run];
+    return size_t{m_run_lengths[c][num_c_run]} + (c == run_symbol ? (local_pos - run_start + 1) : 0);
+    //return m_run_letters_wm->rank(local_pos, c);
   }
 
   size_t global_rank(size_t global_pos, unsigned char c) const {
@@ -201,13 +164,12 @@ class bwt_rle {
     return m_first_row_starts[c] + global_rank(global_pos + 1, c);
   }
 
+  // Is needed anyway
   void build_rank() {
-    m_wm = std::make_unique<wm_type>(m_last_row.cbegin(), m_last_row.cend(), 256);
   }
 
+  // Not that useful since last_row_rle only takes up r*n bytes.
   void free_bwt() {
-    alx::ustring str;
-    std::swap(m_last_row, str);
   }
 
   template <typename t_query>
