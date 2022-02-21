@@ -157,7 +157,7 @@ class bwt_rle {
     std::tie(slice, local_pos) = bwt::locate_bwt_slice(global_pos, m_global_size, m_world_size, m_primary_index);
     assert(slice == m_world_rank);
     // io::alxout << "Answering rank. global_pos=" << global_pos << " local_pos=" << local_pos << " world_size=" << m_world_size << " c=" << c << "\n";
-    return m_exclusive_prefix_histogram[c] + local_rank(local_pos, c);
+    return m_exclusive_prefix_histogram[c] + local_rank(local_pos+1, c);
   }
 
   size_t next_border(size_t global_pos, unsigned char c) const {
@@ -182,7 +182,7 @@ class bwt_rle {
   }
 
   static std::tuple<size_t, size_t> locate_bwt_slice(size_t global_index, size_t global_size, size_t world_size, size_t primary_index) {
-    if (global_index > primary_index) {
+    if (global_index >= primary_index) {
       global_index--;
     }
     return alx::dist::locate_slice(global_index, global_size, world_size);
