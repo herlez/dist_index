@@ -2,7 +2,7 @@
 
 //#include <malloc_count.h>
 
-namespace alx::benchutil {
+namespace alx::dist::benchutil {
 /*
 class spacer {
  private:

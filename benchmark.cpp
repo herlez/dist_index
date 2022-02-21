@@ -4,11 +4,12 @@
 #include <cmdline_parser.hpp>
 #include <filesystem>
 #include <iostream>
+#include <r_index_alx.hpp>
 #include <string>
 
 #include "include/bwt.hpp"
-#include "include/bwt_rle.hpp"
 #include "include/bwt_index.hpp"
+#include "include/bwt_rle.hpp"
 #include "include/util/io.hpp"
 #include "include/util/spacer.hpp"
 #include "include/util/timer.hpp"
@@ -26,6 +27,7 @@ class index_benchmark {
   std::filesystem::path input_path;
   std::filesystem::path patterns_path;
   size_t num_patterns{std::numeric_limits<size_t>::max()};
+  bool check = false;
 
  public:
   template <typename t_bwt, typename t_index>
@@ -44,25 +46,25 @@ class index_benchmark {
     MPI_Get_processor_name(processor_name, &name_len);
 
     // Print off a hello world message
-    alx::io::alxout << "[" << world_rank << "/" << world_size << "]:"
-                    << "I am " << processor_name << "\n";
+    alx::dist::io::alxout << "[" << world_rank << "/" << world_size << "]:"
+                          << "I am " << processor_name << "\n";
 
     // Load queries on main node
     std::vector<std::string> patterns;
     {
       if (world_rank == 0) {
-        alx::benchutil::spacer spacer;
-        alx::benchutil::timer timer;
+        alx::dist::benchutil::spacer spacer;
+        alx::dist::benchutil::timer timer;
 
-        patterns = alx::io::load_patterns(patterns_path, num_patterns);
+        patterns = alx::dist::io::load_patterns(patterns_path, num_patterns);
         assert(patterns.size() <= num_patterns);
 
-        alx::io::benchout << "patterns_load_time=" << timer.get() 
-                          //<< " mem=" << spacer.get() 
-                          << " patterns_path=" << patterns_path 
-                          << " patterns_num=" << patterns.size();
+        alx::dist::io::benchout << "patterns_load_time=" << timer.get()
+                                //<< " mem=" << spacer.get()
+                                << " patterns_path=" << patterns_path
+                                << " patterns_num=" << patterns.size();
         if (patterns.size() != 0) {
-          alx::io::benchout << " patterns_len=" << patterns.front().size() << "\n";
+          alx::dist::io::benchout << " patterns_len=" << patterns.front().size() << "\n";
         }
       }
     }
@@ -74,14 +76,14 @@ class index_benchmark {
     {
       std::string file_name = input_path.filename();
 
-      alx::io::benchout << "RESULT"
-                        << " algo=" << algo
-                        << " num_pes=" << world_size
-                        << " mode=" << mode
-                        << " text=" << file_name;
+      alx::dist::io::benchout << "RESULT"
+                              << " algo=" << algo
+                              << " num_pes=" << world_size
+                              << " mode=" << mode
+                              << " text=" << file_name;
 
-      alx::benchutil::timer timer;
-      alx::benchutil::spacer spacer;
+      alx::dist::benchutil::timer timer;
+      alx::dist::benchutil::spacer spacer;
       spacer.reset_peak();
 
       if (mode == benchmark_mode::from_text) {
@@ -92,13 +94,14 @@ class index_benchmark {
         last_row_path += ".bwt";
         std::filesystem::path primary_index_path = input_path;
         primary_index_path += ".prm";
-        alx::io::alxout << "\n[" << world_rank << "/" << world_size << "]: read bwt from " << last_row_path << " and " << primary_index_path << "\n";
+        alx::dist::io::alxout << "\n[" << world_rank << "/" << world_size << "]: read bwt from " << last_row_path << " and " << primary_index_path << "\n";
         bwt = t_bwt(last_row_path, primary_index_path);
-        alx::io::alxout << "[" << world_rank << "/" << world_size << "]: I hold bwt from " << bwt.start_index() << " to " << bwt.end_index() << "\n";
+        alx::dist::io::alxout << "[" << world_rank << "/" << world_size << "]: I hold bwt from " << bwt.start_index() << " to " << bwt.end_index() << "\n";
 
-        alx::io::benchout << " bwt_time=" << timer.get_and_reset()
-                          //<< " bwt_mem=" << spacer.get()
-                          ;
+        alx::dist::io::benchout << " bwt_time=" << timer.get_and_reset()
+            << " bwt_prime=" << bwt.primary_index()
+            //<< " bwt_mem=" << spacer.get()
+            ;
 
         bwt.build_rank();
         bwt.free_bwt();
@@ -112,26 +115,25 @@ class index_benchmark {
         return;
       }
 
-      alx::io::benchout << " input_size=" << bwt.global_size()
-                        << " ds_time=" << timer.get_and_reset()
-                        //<< " ds_mem=" << spacer.get()
-                        //<< " ds_mempeak=" << spacer.get_peak()
-                        ;
+      alx::dist::io::benchout << " input_size=" << bwt.global_size()
+                              << " ds_time=" << timer.get_and_reset()
+          //<< " ds_mem=" << spacer.get()
+          //<< " ds_mempeak=" << spacer.get_peak()
+          ;
     }
     // Queries
+    std::vector<size_t> count_results;
     {
-      alx::benchutil::spacer spacer;
+      alx::dist::benchutil::spacer spacer;
       spacer.reset_peak();
-      alx::benchutil::timer timer;
-
-      std::vector<size_t> count_results;
+      alx::dist::benchutil::timer timer;
 
       // Counting Queries
       timer.reset();
-      if (algo == "fm_single" | algo == "r_single") {
+      if (algo == "fm_single" || algo == "r_single") {
         count_results = r_index.occ_one_by_one(patterns);
       }
-      if (algo == "fm_batch" | algo == "r_batch") {
+      if (algo == "fm_batch" || algo == "r_batch") {
         count_results = r_index.occ_batched(patterns);
       }
       if (algo == "fm_batch_preshared" || algo == "r_batch_preshared") {
@@ -141,13 +143,38 @@ class index_benchmark {
       // std::cout << i << ' ';
 
       if (world_rank == 0) {
-        alx::io::benchout << " c_time=" << timer.get_and_reset()
-                          << " num_patterns=" << patterns.size()
-                          //<< " c_mem=" << spacer.get()
-                          //<< " c_mempeak=" << spacer.get_peak()
-                          << " c_sum=" << accumulate(count_results.begin(), count_results.end(), 0)
-                          << "\n";
+        alx::dist::io::benchout << " c_time=" << timer.get_and_reset()
+                                << " num_patterns=" << patterns.size()
+                                //<< " c_mem=" << spacer.get()
+                                //<< " c_mempeak=" << spacer.get_peak()
+                                << " c_sum=" << std::accumulate(count_results.begin(), count_results.end(), 0)
+                                << "\n";
       }
+    }
+
+    // Check
+    if (check && world_rank == 0) {
+      std::filesystem::path last_row_path = input_path;
+      last_row_path += ".bwt";
+      std::filesystem::path primary_index_path = input_path;
+      primary_index_path += ".prm";
+      alx::bwt seq_bwt(last_row_path, primary_index_path);
+      alx::r_index seq_index(seq_bwt);
+
+      alx::dist::benchutil::timer timer;
+      std::vector<size_t> count_check;
+      for (auto const& pattern : patterns) {
+        count_check.push_back(seq_index.occ(pattern));
+      }
+      for(size_t i = 0; i < count_check.size(); ++i) {
+        if(count_check[i] != count_results[i]) {
+          alx::dist::io::benchout << " first_error=" << i;
+          break;
+        }
+      }
+      alx::dist::io::benchout << " check_time=" << timer.get()
+                              << " check_sum=" << std::accumulate(count_check.begin(), count_check.end(), 0)
+                              << '\n';
     }
   }
 };
@@ -159,20 +186,22 @@ int main(int argc, char** argv) {
   index_benchmark benchmark;
 
   tlx::CmdlineParser cp;
-  cp.set_description("Benchmark for text indices");
+  cp.set_description("Benchmark for distributed text indices");
   cp.set_author("Alexander Herlez <alexander.herlez@tu-dortmund.de>\n");
-
-  std::string input_path;
-  cp.add_param_string("input_path", input_path, "Path to the input text/BWT/index");
-
-  std::string patterns_path;
-  cp.add_param_string("patterns_path", patterns_path, "Path to pizza&chili patterns");
 
   unsigned int mode;
   cp.add_param_uint("mode", mode, "Mode: [0]:Text->Index [1]:BWT->Index [2]:Load Index from file");
 
+  std::string input_path;
+  cp.add_param_string("input_path", input_path, "Path to the input text/BWT/index without file suffix. Enter \"~/text/english\" to load \"~/text/english.bwt\"");
+
+  std::string patterns_path;
+  cp.add_param_string("patterns_path", patterns_path, "Path to pizza&chili patterns");
+
   cp.add_size_t('q', "num_patterns", benchmark.num_patterns,
                 "Number of queries (default=all)");
+
+  cp.add_flag('c', "check", benchmark.check, "Check with sequential r-index.");
 
   if (!cp.process(argc, argv)) {
     std::exit(EXIT_FAILURE);
@@ -181,14 +210,13 @@ int main(int argc, char** argv) {
   benchmark.patterns_path = patterns_path;
   benchmark.mode = static_cast<benchmark_mode>(mode);
 
-  // benchmark.run<alx::r_index>("herlez");
-  //benchmark.run<alx::bwt, alx::bwt_index>("fm_single");
-  benchmark.run<alx::bwt, alx::bwt_index<alx::bwt>>("fm_batch");
-  //benchmark.run<alx::bwt, alx::bwt_index<alx::bwt>>("fm_batch_preshared");
+  // benchmark.run<alx::bwt, alx::bwt_index>("fm_single");
+  benchmark.run<alx::dist::bwt, alx::dist::bwt_index<alx::dist::bwt>>("fm_batch");
+  // benchmark.run<alx::bwt, alx::bwt_index<alx::bwt>>("fm_batch_preshared");
 
-  //benchmark.run<alx::bwt_rle, alx::bwt_index<alx::bwt_rle>>("r_single");
-  benchmark.run<alx::bwt_rle, alx::bwt_index<alx::bwt_rle>>("r_batch");
-  //benchmark.run<alx::bwt_rle, alx::bwt_index<alx::bwt_rle>>("r_preshared");
+  // benchmark.run<alx::dist::bwt_rle, alx::dist::bwt_index<alx::dist::bwt_rle>>("r_single");
+  benchmark.run<alx::dist::bwt_rle, alx::dist::bwt_index<alx::dist::bwt_rle>>("r_batch");
+  // benchmark.run<alx::dist::bwt_rle, alx::dist::bwt_index<alx::dist::bwt_rle>>("r_preshared");
 
   // Finalize the MPI environment.
   MPI_Finalize();

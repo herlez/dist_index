@@ -4,7 +4,7 @@
 #include <iostream>
 #include <tdc/uint/uint40.hpp>
 
-namespace alx {
+namespace alx::dist {
 
 // A single query for the left or right border of the current backwards search
 struct rank_query {
@@ -30,7 +30,7 @@ struct rank_query {
     return m_pattern[m_pos_in_pattern];
   }
 
-  friend std::ostream &operator<<(std::ostream &os, const alx::rank_query query) {
+  friend std::ostream &operator<<(std::ostream &os, const rank_query query) {
     return os << "id=" << query.m_id << "[" << (int)query.m_pos_in_pattern << "]=" << std::string(query.m_pattern, query.m_pattern + query.m_pos_in_pattern) << " border=" << query.m_border;
   }
 

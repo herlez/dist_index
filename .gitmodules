@@ -13,3 +13,6 @@
 [submodule "extlib/libsais"]
 	path = extlib/libsais
 	url = git@github.com:IlyaGrebnov/libsais.git
+[submodule "extlib/r-index"]
+	path = extlib/r-index
+	url = git@github.com:herlez/r-index.git

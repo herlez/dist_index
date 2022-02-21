@@ -2,7 +2,7 @@
 
 #include <chrono>
 
-namespace alx::benchutil {
+namespace alx::dist::benchutil {
 
 class timer {
  private:

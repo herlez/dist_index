@@ -19,22 +19,7 @@ namespace alx {
 typedef std::basic_string<unsigned char> ustring;
 }
 
-namespace alx::mpi {
-int my_rank() {
-  int rank;
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  return rank;
-}
-
-int world_size() {
-  int world_size;
-  MPI_Comm_size(MPI_COMM_WORLD, &world_size);
-  return world_size;
-}
-
-}  // namespace alx::mpi
-
-namespace alx::io {
+namespace alx::dist {
 
 #if SIZE_MAX == UCHAR_MAX
 #define my_MPI_SIZE_T MPI_UNSIGNED_CHAR
@@ -50,35 +35,17 @@ namespace alx::io {
 #error "what is happening here?"
 #endif
 
-struct out_t {
-  template <typename T>
-  out_t& operator<<([[maybe_unused]] T&& x) {
-    /*
-    int world_rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
-    std::filesystem::path log_path = "./alxlog" + std::to_string(world_rank) + std::string(".log");
-    std::ofstream out(log_path, std::ios::out | std::ios::app);
-    out << x;
-    */
-    return *this;
-  }
-};
+int my_rank() {
+  int rank;
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  return rank;
+}
 
-static out_t alxout;
-
-struct bench_out_t {
-  template <typename T>
-  bench_out_t& operator<<(T&& x) {
-    int world_rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
-    std::filesystem::path log_path = "./alxbench" + std::to_string(world_rank) + std::string(".log");
-    std::ofstream out(log_path, std::ios::out | std::ios::app);
-    out << x;
-    return *this;
-  }
-};
-
-static bench_out_t benchout;
+int world_size() {
+  int world_size;
+  MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+  return world_size;
+}
 
 // Calculate correct indexes [begin, end)
 std::tuple<size_t, size_t> slice_indexes(size_t global_size, size_t world_rank, size_t world_size) {
@@ -113,18 +80,42 @@ std::tuple<size_t, size_t> locate_slice(size_t global_index, size_t global_size,
   // alxout << "global_index=" << global_index << " global_size=" << global_size << " world_size=" << world_size << " chunk_size=" << chunk_size << " rank=" << rank << " local_index=" << local_index << '\n';
   return {rank, local_index};
 }
+}  // namespace alx::dist
 
-std::tuple<size_t, size_t> locate_bwt_slice(size_t global_index, size_t global_size, size_t world_size, size_t primary_index) {
-  if (global_index >= primary_index) {
-    global_index--;
+namespace alx::dist::io {
+struct out_t {
+  template <typename T>
+  out_t& operator<<([[maybe_unused]] T&& x) {
+    /*
+    int world_rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+    std::filesystem::path log_path = "./alxlog" + std::to_string(world_rank) + std::string(".log");
+    std::ofstream out(log_path, std::ios::out | std::ios::app);
+    out << x;
+    */
+    return *this;
   }
-  return locate_slice(global_index, global_size, world_size);
-}
+};
+
+static out_t alxout;
+
+struct bench_out_t {
+  template <typename T>
+  bench_out_t& operator<<(T&& x) {
+    int world_rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+    std::filesystem::path log_path = "./alxbench" + std::to_string(world_rank) + std::string(".log");
+    std::ofstream out(log_path, std::ios::out | std::ios::app);
+    out << x;
+    return *this;
+  }
+};
+
+static bench_out_t benchout;
 
 template <class T>
 std::ostream& operator<<(std::ostream& o, const std::span<T>& span) {
   std::copy(span.begin(), span.end(), std::ostream_iterator<T>(o, " "));
-
   return o;
 }
 
@@ -147,29 +138,13 @@ std::ostream& operator<<(std::ostream& out, const std::vector<T>& v) {
   return out;
 }
 
-std::vector<std::string> read_strings_line_by_line(std::filesystem::path const& path) {
-  std::fstream stream(path.c_str(), std::ios::in);
-  std::string cur_line;
-
-  std::vector<std::string> result;
-
-  if (stream) {
-    while (std::getline(stream, cur_line)) {
-      result.push_back(cur_line);
-    }
-  }
-  stream.close();
-
-  return result;
-}
-
 std::string load_text(std::filesystem::path const& path, bool timer_output = false) {
   if (!std::filesystem::exists(path)) {
     std::cout << "#FILE " << path << " not found.\n";
     return std::string{};
   }
 
-  benchutil::timer timer;
+  alx::dist::benchutil::timer timer;
 
   std::ifstream t(path);
   t.seekg(0, std::ios::end);
@@ -183,17 +158,6 @@ std::string load_text(std::filesystem::path const& path, bool timer_output = fal
   }
   // std::cout << " (" << buffer.size() / 1'000'000 << " MB) in " << timer.get_and_reset() << "ms.\n";
   return buffer;
-}
-
-void save_text(std::filesystem::path const& path, std::string const& text, bool timer_output = false) {
-  benchutil::timer timer;
-
-  std::ofstream of(path);
-  of << text;
-
-  if (timer_output) {
-    std::cout << "#WRITE file to=" << path << " size=" << text.size() << " time=" << timer.get_and_reset() << '\n';
-  }
 }
 
 std::array<size_t, 256> histogram(std::string const& text) {
@@ -212,35 +176,6 @@ size_t alphabet_size(std::string const& text) {
     alphabet_size += (a > 0);
   }
   return alphabet_size;
-}
-
-std::vector<std::string> load_queries(std::filesystem::path const& path) {
-  benchutil::timer timer;
-
-  std::vector<std::string> queries;
-  std::ifstream ifstr(path);
-  std::string line;
-  while (std::getline(ifstr, line)) {
-    queries.push_back(line);
-  }
-
-  std::cout << "#READ queries from=" << path << " size=" << queries.size() << " in=" << timer.get_and_reset() << '\n';
-  return queries;
-}
-
-std::vector<std::string> generate_queries(std::string const& text, size_t num, size_t length) {
-  benchutil::timer timer;
-
-  std::vector<std::string> queries;
-  for (size_t i = 0; i < num; ++i) {
-    size_t q_pos = i * 100;
-    if (q_pos + length >= text.size()) {
-      break;
-    }
-    queries.push_back(text.substr(q_pos, length));
-  }
-  std::cout << "#GENERATE queries size=" << queries.size() << " time=" << timer.get_and_reset() << '\n';
-  return queries;
 }
 
 size_t get_number_of_patterns(std::string header) {
@@ -301,4 +236,4 @@ std::vector<std::string> load_patterns(std::filesystem::path path, size_t num_pa
   return patterns;
 }
 
-}  // namespace alx::io
+}  // namespace alx::dist::io
