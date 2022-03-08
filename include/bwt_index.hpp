@@ -19,33 +19,125 @@
 
 namespace alx::dist {
 
+/*
 class concatenated_strings {
  public:
   concatenated_strings() = default;
 
   concatenated_strings(std::vector<std::string> strings) {
-    starts.reserve(strings.size());
-    for (auto const& str : strings) {
-      starts.push_back(str.size());
-      std::copy(str.begin(), str.end(), std::back_inserter(concat_string));
+    num_strings = strings.size();
+    starts_resize(num_strings);
+    if(num_strings != 0) {
+      len_strings = num_strings * strings[0].size();
+      concat_string_resize(len_strings);
     }
-    std::exclusive_scan(starts.begin(), starts.end(), starts.begin(), 0);
+
+    size_t last_str_pos = 0;
+    for(size_t i = 0; i < num_strings; ++i) {
+      auto const& str = strings[i];
+      starts[i] = last_str_pos;
+      std::copy(str.begin(), str.end(), concat_string_data() + last_str_pos);
+
+      last_str_pos += str.size();
+    }
   }
 
   size_t size() const {
-    return starts.size();
+    return num_strings;
   }
 
   size_t length_all_strings() const {
-    return concat_string.size();
+    return len_strings;
   }
 
+  char* concat_string_data() {
+    return concat_string.data();
+  }
+
+  void concat_string_resize(size_t k) {
+    len_strings = k;
+    concat_string.resize(k);
+  }
+  uint32_t* starts_data() {
+    return starts.data();
+  }
+  void starts_resize(size_t k) {
+    num_strings = k;
+    starts.resize(k);
+  }
   std::vector<char>::const_iterator operator[](size_t i) const {
     return concat_string.begin() + starts[i];
   }
-
+  size_t num_strings;
+  size_t len_strings;
   std::vector<char> concat_string;
   std::vector<uint32_t> starts;
+};*/
+
+
+class concatenated_strings {
+ public:
+  concatenated_strings() = default;
+
+  concatenated_strings(std::vector<std::string> strings) {
+    starts_resize(strings.size());
+    concat_string_resize(strings.size() * strings[0].size());
+    
+    size_t last_str_pos = 0;
+    for(size_t i = 0; i < num_strings; ++i) {
+      auto const& str = strings[i];
+      starts[i] = last_str_pos;
+      std::copy(str.begin(), str.end(), concat_string_data() + last_str_pos);
+
+      last_str_pos += str.size();
+    }
+    io::alxout << "Concat_string built. len=" << len_strings << "\n";
+  }
+
+  ~concatenated_strings() {
+    delete[] concat_string;
+    delete[] starts;
+  }
+
+  size_t size() const {
+    return num_strings;
+  }
+
+  size_t length_all_strings() const {
+    return len_strings;
+  }
+
+  char* concat_string_data() {
+    return concat_string;
+  }
+
+  void concat_string_resize(size_t k) {
+    if(len_strings < k) {
+      len_strings = k;
+      concat_string = new char[k];
+      io::alxout << "Concat_string resized to " << len_strings << "\n";
+    }
+  }
+
+  uint32_t* starts_data() {
+    return starts;
+  }
+  void starts_resize(size_t k) {
+      if(num_strings < k) {
+      num_strings = k;
+      starts = new uint32_t[k];
+      io::alxout << "Start resized to " << num_strings << "\n";
+    }
+  }
+
+  char* operator[](size_t i) const {
+    return (concat_string + starts[i]);
+  }
+
+  size_t num_strings = 0;
+  size_t len_strings = 0;
+  char* concat_string = nullptr;
+  uint32_t* starts = nullptr;
 };
 
 template <typename t_bwt>
@@ -53,13 +145,66 @@ class bwt_index {
  private:
   t_bwt const* m_bwt;
 
+  // std::unordered_map<__int128_t, std::pair<size_t, size_t>> m_headstart;
+  bool m_headstart_avail = false;
+  constexpr static size_t m_static_headstart = 1;
+  // std::array<std::pair<size_t, size_t>, (size_t{1} << (m_static_headstart * 8))> m_headstart;
+  std::unordered_map<size_t, std::pair<size_t, size_t>> m_headstart;
+
  public:
   bwt_index() : m_bwt(nullptr) {}
 
-  // Load partial bwt from bwt and primary index file.
-  bwt_index(t_bwt const& bwt) : m_bwt(&bwt) {}
+  // Load partial bwt from bwt file.
+  bwt_index(t_bwt const& bwt) : m_bwt(&bwt) {
+    static_headstart();
+    m_headstart_avail = true;
+    MPI_Barrier(MPI_COMM_WORLD);
+  }
 
-  std::vector<size_t> occ_batched_preshared(std::vector<std::string> const& patterns) {
+  void dynamic_headstart() {
+    //...
+  }
+
+  void static_headstart() {
+    std::vector<std::string> patterns;
+
+    if (my_rank() == 0) {
+      patterns.reserve(m_headstart.size());
+      std::string next_string;
+      next_string.resize(m_static_headstart);
+      // for (size_t i = 0; i < 256; ++i) {
+      // for (size_t j = 0; j < 256; ++j) {
+      for (size_t k = 0; k < 256; ++k) {
+        next_string[0] = (char)k;
+        // next_string[1] = (char)j;
+        // next_string[2] = (char)i;
+        patterns.push_back(next_string);
+      }
+      //}
+      //}
+    }
+
+    std::vector<rank_query> finished_queries = occ<rank_query>(patterns);
+
+    if (my_rank() == 0) {
+      assert(finished_queries.size() == 2 * patterns.size());
+      std::sort(finished_queries.begin(), finished_queries.end(), [](auto const& left, auto const& right) {
+        return left.m_id < right.m_id;
+      });
+
+      for (size_t i = 0; i < finished_queries.size(); i += 2) {
+        size_t left, right;
+        std::tie(left, right) = std::minmax(finished_queries[i].m_border.u64(), finished_queries[i + 1].m_border.u64());
+        m_headstart[i / 2].first = left;
+        m_headstart[i / 2].second = right;
+
+        io::alxout << "Result: " << right - left << "\n";
+      }
+    }
+  }
+
+  std::vector<size_t>
+  occ_batched_preshared(std::vector<std::string> const& patterns) {
     // Build concatenated string and share between PEs
     concatenated_strings conc_strings(patterns);
     io::alxout << "conc_stings_num=" << conc_strings.size() << " conc_strings_length=" << conc_strings.length_all_strings() << '\n';
@@ -70,15 +215,15 @@ class bwt_index {
     {
       size_t conc_strings_size = conc_strings.length_all_strings();
       MPI_Bcast(&conc_strings_size, 1, my_MPI_SIZE_T, 0, MPI_COMM_WORLD);
-      conc_strings.concat_string.resize(conc_strings_size);
-      MPI_Bcast(conc_strings.concat_string.data(), conc_strings.length_all_strings(), MPI_UNSIGNED_CHAR, 0, MPI_COMM_WORLD);
+      conc_strings.concat_string_resize(conc_strings_size);
+      MPI_Bcast(conc_strings.concat_string_data(), conc_strings_size, MPI_UNSIGNED_CHAR, 0, MPI_COMM_WORLD);
     }
     // Broadcast conc_string.starts
     {
       size_t num_patterns = patterns.size();
       MPI_Bcast(&num_patterns, 1, my_MPI_SIZE_T, 0, MPI_COMM_WORLD);
-      conc_strings.starts.resize(num_patterns);
-      MPI_Bcast(conc_strings.starts.data(), conc_strings.size(), MPI_UINT32_T, 0, MPI_COMM_WORLD);
+      conc_strings.starts_resize(num_patterns);
+      MPI_Bcast(conc_strings.starts_data(), num_patterns, MPI_UINT32_T, 0, MPI_COMM_WORLD);
     }
     io::alxout << "conc_stings_num=" << conc_strings.size() << " conc_strings_length=" << conc_strings.length_all_strings() << '\n';
     io::alxout << conc_strings.concat_string << '\n';
@@ -167,7 +312,7 @@ class bwt_index {
     finished_queries.reserve(patterns.size());
 
     io::alxout << '\n'
-                    << queries << '\n';
+               << queries << '\n';
 
     // Loop : Send and Calculate until finished
     bool global_finished = false;
@@ -257,15 +402,36 @@ class bwt_index {
     queries.reserve(patterns.size() * 2);
     io::alxout << "Initializing " << patterns.size() << " queries..\n";
 
-    for (size_t i = 0; i < patterns.size(); ++i) {
-      queries.emplace_back(patterns[i], patterns[i].size(), 0, i);
-      io::alxout << "Initialized query " << i << ": " << queries.back() << "\n";
-      queries.emplace_back(patterns[i], patterns[i].size(), m_bwt->global_size(), i);
-      io::alxout << "Initialized query " << i << ": " << queries.back() << "\n";
+    if (m_headstart_avail) {
+      for (size_t i = 0; i < patterns.size(); ++i) {
+        size_t pattern_suffix = 0;
+        size_t suffix_length = 0;
+        for (auto rev_iterator = patterns[i].rbegin(); rev_iterator != patterns[i].rbegin() + m_static_headstart; ++rev_iterator) {
+          pattern_suffix *= 256;
+          pattern_suffix += static_cast<unsigned char>(*rev_iterator);
+          ++suffix_length;
+        }
+
+        while (m_headstart.find(pattern_suffix) == m_headstart.end()) {
+          pattern_suffix >>= 8;
+          suffix_length--;
+        }
+
+        queries.emplace_back(patterns[i], patterns[i].size() - suffix_length, m_headstart[pattern_suffix].first, i);
+        io::alxout << "Initialized query " << i << ": " << queries.back() << "\n";
+        queries.emplace_back(patterns[i], patterns[i].size() - suffix_length, m_headstart[pattern_suffix].second, i);
+        io::alxout << "Initialized query " << i << ": " << queries.back() << "\n";
+      }
+    } else {
+      for (size_t i = 0; i < patterns.size(); ++i) {
+        queries.emplace_back(patterns[i], patterns[i].size(), 0, i);
+        io::alxout << "Initialized query " << i << ": " << queries.back() << "\n";
+        queries.emplace_back(patterns[i], patterns[i].size(), m_bwt->global_size(), i);
+        io::alxout << "Initialized query " << i << ": " << queries.back() << "\n";
+      }
     }
     return queries;
   }
-
 };
 
-}  // namespace alx
+}  // namespace alx::dist

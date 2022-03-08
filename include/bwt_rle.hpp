@@ -25,7 +25,6 @@ class bwt_rle {
   int m_world_rank;      // PE number
 
   alx::ustring m_run_letters;                            // last row bwt matrix
-  size_t m_primary_index;                                // index of implicit $ in last row
   std::array<size_t, 256> m_exclusive_prefix_histogram;  // histogram of text of previous PEs
   std::array<size_t, 256> m_first_row_starts;            // positions where the character runs start in global F
 
@@ -41,17 +40,9 @@ class bwt_rle {
  public:
   bwt_rle() : m_global_size{0}, m_start_index{0}, m_end_index{0} {}
 
-  // Load partial bwt from bwt and primary index file.
-  bwt_rle(std::filesystem::path const& last_row_path, std::filesystem::path const& primary_index_path) {
-    bwt bwt(last_row_path, primary_index_path);
-    build_struct(bwt);
-  }
-
-  // Calulate partial bwt from distributed suffix array and distributed text.
-
-  template <typename t_text_container, typename t_sa_container>
-  bwt_rle(t_text_container const& text_slice, t_sa_container const& sa_slice, size_t text_size, int world_rank, int world_size) {
-    bwt bwt(sa_slice, text_size, world_rank, world_size);
+  // Load partial bwt from bwt file.
+  bwt_rle(std::filesystem::path const& last_row_path) {
+    bwt bwt(last_row_path);
     build_struct(bwt);
   }
 
@@ -61,7 +52,6 @@ class bwt_rle {
     m_end_index = input_bwt.end_index();
     m_world_size = input_bwt.world_size();
     m_world_rank = input_bwt.world_rank();
-    m_primary_index = input_bwt.primary_index();
     m_exclusive_prefix_histogram = input_bwt.exclusive_prefix_histogram();
     m_first_row_starts = input_bwt.first_row_starts();
 
@@ -124,9 +114,6 @@ class bwt_rle {
   alx::ustring::value_type access_wm(size_t i) const {
     return m_wm->operator[](i);
   }*/
-  size_t primary_index() const {
-    return m_primary_index;
-  }
 
   // Return size of bwt slice.
   size_t size() const {
@@ -154,10 +141,10 @@ class bwt_rle {
   size_t global_rank(size_t global_pos, unsigned char c) const {
     size_t slice;
     size_t local_pos;
-    std::tie(slice, local_pos) = bwt::locate_bwt_slice(global_pos, m_global_size, m_world_size, m_primary_index);
+    std::tie(slice, local_pos) = bwt::locate_bwt_slice(global_pos, m_global_size, m_world_size);
     assert(slice == m_world_rank);
     // io::alxout << "Answering rank. global_pos=" << global_pos << " local_pos=" << local_pos << " world_size=" << m_world_size << " c=" << c << "\n";
-    return m_exclusive_prefix_histogram[c] + local_rank(local_pos+1, c);
+    return m_exclusive_prefix_histogram[c] + local_rank(local_pos, c);
   }
 
   size_t next_border(size_t global_pos, unsigned char c) const {
@@ -177,14 +164,11 @@ class bwt_rle {
     if (query.m_pos_in_pattern == 0) {
       return 0;
     } else {
-      return std::get<0>(locate_bwt_slice(query.m_border.u64(), m_global_size, m_world_size, m_primary_index));
+      return std::get<0>(locate_bwt_slice(query.m_border.u64(), m_global_size, m_world_size));
     }
   }
 
-  static std::tuple<size_t, size_t> locate_bwt_slice(size_t global_index, size_t global_size, size_t world_size, size_t primary_index) {
-    if (global_index >= primary_index) {
-      global_index--;
-    }
+  static std::tuple<size_t, size_t> locate_bwt_slice(size_t global_index, size_t global_size, size_t world_size) {
     return alx::dist::locate_slice(global_index, global_size, world_size);
   }
 };
