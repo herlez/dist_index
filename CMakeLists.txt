@@ -39,9 +39,9 @@ target_include_directories(seq_alx_rindex INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/
 #target_link_libraries(seq_alx_rindex INTERFACE alx_bwt tdc pasta_wt)# malloc_count
 
 #include malloc_count
-#add_library(malloc_count ${CMAKE_CURRENT_SOURCE_DIR}/extlib/malloc_count/malloc_count.c)
-#target_include_directories(malloc_count PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/extlib/malloc_count)
-#target_link_libraries(malloc_count -ldl)
+#add_library(malloc_count ${CMAKE_CURRENT_SOURCE_DIR}/extlib/malloc_count/malloc_count.c) #malloc_count
+#target_include_directories(malloc_count PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/extlib/malloc_count) #malloc_count
+#target_link_libraries(malloc_count -ldl) #malloc_count
 
 #include tlx
 add_library(tlx
@@ -61,5 +61,4 @@ target_link_libraries(bench PRIVATE alx_rindex seq_alx_rindex tlx MPI::MPI_CXX) 
 add_executable(gen_patterns genpatterns.c)
 target_compile_options(gen_patterns PRIVATE -Wall -Wextra -pedantic -O3 -DNDEBUG)
 
-
-
+#add_executable(bwt_prime bwt_prime.cpp)

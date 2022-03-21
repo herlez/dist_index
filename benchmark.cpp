@@ -92,14 +92,13 @@ class index_benchmark {
       } else if (mode == benchmark_mode::from_bwt) {
         std::filesystem::path last_row_path = input_path;
         last_row_path += ".bwt";
-        std::filesystem::path primary_index_path = input_path;
-        primary_index_path += ".prm";
-        alx::dist::io::alxout << "\n[" << world_rank << "/" << world_size << "]: read bwt from " << last_row_path << " and " << primary_index_path << "\n";
-        bwt = t_bwt(last_row_path, primary_index_path);
+        //alx::dist::io::benchout << " last_row_path=" << last_row_path;
+
+        alx::dist::io::alxout << "\n[" << world_rank << "/" << world_size << "]: read bwt from " << last_row_path << "\n";
+        bwt = t_bwt(last_row_path);
         alx::dist::io::alxout << "[" << world_rank << "/" << world_size << "]: I hold bwt from " << bwt.start_index() << " to " << bwt.end_index() << "\n";
 
         alx::dist::io::benchout << " bwt_time=" << timer.get_and_reset()
-            << " bwt_prime=" << bwt.primary_index()
             //<< " bwt_mem=" << spacer.get()
             ;
 
@@ -149,6 +148,8 @@ class index_benchmark {
                                 //<< " c_mempeak=" << spacer.get_peak()
                                 << " c_sum=" << std::accumulate(count_results.begin(), count_results.end(), 0)
                                 << "\n";
+      } else {
+        alx::dist::io::benchout << "\n";
       }
     }
 
@@ -210,13 +211,13 @@ int main(int argc, char** argv) {
   benchmark.patterns_path = patterns_path;
   benchmark.mode = static_cast<benchmark_mode>(mode);
 
-  // benchmark.run<alx::bwt, alx::bwt_index>("fm_single");
+  //benchmark.run<alx::dist::bwt, alx::dist::bwt_index<alx::dist::bwt>>("fm_single");
   benchmark.run<alx::dist::bwt, alx::dist::bwt_index<alx::dist::bwt>>("fm_batch");
-  // benchmark.run<alx::bwt, alx::bwt_index<alx::bwt>>("fm_batch_preshared");
+  benchmark.run<alx::dist::bwt, alx::dist::bwt_index<alx::dist::bwt>>("fm_batch_preshared");
 
-  // benchmark.run<alx::dist::bwt_rle, alx::dist::bwt_index<alx::dist::bwt_rle>>("r_single");
+  //benchmark.run<alx::dist::bwt_rle, alx::dist::bwt_index<alx::dist::bwt_rle>>("r_single");
   benchmark.run<alx::dist::bwt_rle, alx::dist::bwt_index<alx::dist::bwt_rle>>("r_batch");
-  // benchmark.run<alx::dist::bwt_rle, alx::dist::bwt_index<alx::dist::bwt_rle>>("r_preshared");
+  benchmark.run<alx::dist::bwt_rle, alx::dist::bwt_index<alx::dist::bwt_rle>>("r_batch_preshared");
 
   // Finalize the MPI environment.
   MPI_Finalize();
