@@ -4,14 +4,12 @@
 #include <cmdline_parser.hpp>
 #include <filesystem>
 #include <iostream>
-#include <r_index_alx.hpp>
 #include <string>
 
 #include "include/bwt.hpp"
 #include "include/bwt_index.hpp"
 #include "include/bwt_rle.hpp"
 #include "include/util/io.hpp"
-#include "include/util/spacer.hpp"
 #include "include/util/timer.hpp"
 
 enum benchmark_mode {
@@ -27,7 +25,6 @@ class index_benchmark {
   std::filesystem::path input_path;
   std::filesystem::path patterns_path;
   size_t num_patterns{std::numeric_limits<size_t>::max()};
-  bool check = false;
 
  public:
   template <typename t_bwt, typename t_index>
@@ -53,14 +50,12 @@ class index_benchmark {
     std::vector<std::string> patterns;
     {
       if (world_rank == 0) {
-        alx::dist::benchutil::spacer spacer;
         alx::dist::benchutil::timer timer;
 
         patterns = alx::dist::io::load_patterns(patterns_path, num_patterns);
         assert(patterns.size() <= num_patterns);
 
         alx::dist::io::benchout << "patterns_load_time=" << timer.get()
-                                //<< " mem=" << spacer.get()
                                 << " patterns_path=" << patterns_path
                                 << " patterns_num=" << patterns.size();
         if (patterns.size() != 0) {
@@ -83,8 +78,6 @@ class index_benchmark {
                               << " text=" << file_name;
 
       alx::dist::benchutil::timer timer;
-      alx::dist::benchutil::spacer spacer;
-      spacer.reset_peak();
 
       if (mode == benchmark_mode::from_text) {
         std::cerr << "Build from text not supported yet.\n";
@@ -92,15 +85,13 @@ class index_benchmark {
       } else if (mode == benchmark_mode::from_bwt) {
         std::filesystem::path last_row_path = input_path;
         last_row_path += ".bwt";
-        //alx::dist::io::benchout << " last_row_path=" << last_row_path;
+        // alx::dist::io::benchout << " last_row_path=" << last_row_path;
 
         alx::dist::io::alxout << "\n[" << world_rank << "/" << world_size << "]: read bwt from " << last_row_path << "\n";
         bwt = t_bwt(last_row_path);
         alx::dist::io::alxout << "[" << world_rank << "/" << world_size << "]: I hold bwt from " << bwt.start_index() << " to " << bwt.end_index() << "\n";
 
-        alx::dist::io::benchout << " bwt_time=" << timer.get_and_reset()
-            //<< " bwt_mem=" << spacer.get()
-            ;
+        alx::dist::io::benchout << " bwt_time=" << timer.get_and_reset();
 
         bwt.build_rank();
         bwt.free_bwt();
@@ -115,16 +106,11 @@ class index_benchmark {
       }
 
       alx::dist::io::benchout << " input_size=" << bwt.global_size()
-                              << " ds_time=" << timer.get_and_reset()
-          //<< " ds_mem=" << spacer.get()
-          //<< " ds_mempeak=" << spacer.get_peak()
-          ;
+                              << " ds_time=" << timer.get_and_reset();
     }
     // Queries
     std::vector<size_t> count_results;
     {
-      alx::dist::benchutil::spacer spacer;
-      spacer.reset_peak();
       alx::dist::benchutil::timer timer;
 
       // Counting Queries
@@ -144,38 +130,11 @@ class index_benchmark {
       if (world_rank == 0) {
         alx::dist::io::benchout << " c_time=" << timer.get_and_reset()
                                 << " num_patterns=" << patterns.size()
-                                //<< " c_mem=" << spacer.get()
-                                //<< " c_mempeak=" << spacer.get_peak()
                                 << " c_sum=" << std::accumulate(count_results.begin(), count_results.end(), 0)
                                 << "\n";
       } else {
         alx::dist::io::benchout << "\n";
       }
-    }
-
-    // Check
-    if (check && world_rank == 0) {
-      std::filesystem::path last_row_path = input_path;
-      last_row_path += ".bwt";
-      std::filesystem::path primary_index_path = input_path;
-      primary_index_path += ".prm";
-      alx::bwt seq_bwt(last_row_path, primary_index_path);
-      alx::r_index seq_index(seq_bwt);
-
-      alx::dist::benchutil::timer timer;
-      std::vector<size_t> count_check;
-      for (auto const& pattern : patterns) {
-        count_check.push_back(seq_index.occ(pattern));
-      }
-      for(size_t i = 0; i < count_check.size(); ++i) {
-        if(count_check[i] != count_results[i]) {
-          alx::dist::io::benchout << " first_error=" << i;
-          break;
-        }
-      }
-      alx::dist::io::benchout << " check_time=" << timer.get()
-                              << " check_sum=" << std::accumulate(count_check.begin(), count_check.end(), 0)
-                              << '\n';
     }
   }
 };
@@ -202,8 +161,6 @@ int main(int argc, char** argv) {
   cp.add_size_t('q', "num_patterns", benchmark.num_patterns,
                 "Number of queries (default=all)");
 
-  cp.add_flag('c', "check", benchmark.check, "Check with sequential r-index.");
-
   if (!cp.process(argc, argv)) {
     std::exit(EXIT_FAILURE);
   }
@@ -211,11 +168,11 @@ int main(int argc, char** argv) {
   benchmark.patterns_path = patterns_path;
   benchmark.mode = static_cast<benchmark_mode>(mode);
 
-  //benchmark.run<alx::dist::bwt, alx::dist::bwt_index<alx::dist::bwt>>("fm_single");
+  // benchmark.run<alx::dist::bwt, alx::dist::bwt_index<alx::dist::bwt>>("fm_single");
   benchmark.run<alx::dist::bwt, alx::dist::bwt_index<alx::dist::bwt>>("fm_batch");
   benchmark.run<alx::dist::bwt, alx::dist::bwt_index<alx::dist::bwt>>("fm_batch_preshared");
 
-  //benchmark.run<alx::dist::bwt_rle, alx::dist::bwt_index<alx::dist::bwt_rle>>("r_single");
+  // benchmark.run<alx::dist::bwt_rle, alx::dist::bwt_index<alx::dist::bwt_rle>>("r_single");
   benchmark.run<alx::dist::bwt_rle, alx::dist::bwt_index<alx::dist::bwt_rle>>("r_batch");
   benchmark.run<alx::dist::bwt_rle, alx::dist::bwt_index<alx::dist::bwt_rle>>("r_batch_preshared");
 

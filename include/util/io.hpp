@@ -65,6 +65,7 @@ std::tuple<size_t, size_t> slice_indexes(size_t global_size, size_t world_rank, 
   return {begin, end};
 }
 
+// Calculate {node_rank, local_index}
 std::tuple<size_t, size_t> locate_slice(size_t global_index, size_t global_size, size_t world_size) {
   if (world_size > global_size) {
     return {global_index, 0};
@@ -102,11 +103,13 @@ static out_t alxout;
 struct bench_out_t {
   template <typename T>
   bench_out_t& operator<<(T&& x) {
-    int world_rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
-    std::filesystem::path log_path = "./alxbench" + std::to_string(world_rank) + std::string(".log");
-    std::ofstream out(log_path, std::ios::out | std::ios::app);
-    out << x;
+    if (my_rank() == 0) {
+      std::cout << x;
+    } else {
+      std::filesystem::path log_path = "./alxbench" + std::to_string(my_rank()) + std::string(".log");
+      std::ofstream out(log_path, std::ios::out | std::ios::app);
+      out << x;
+    }
     return *this;
   }
 };
@@ -136,28 +139,6 @@ std::ostream& operator<<(std::ostream& out, const std::vector<T>& v) {
   }
   out << "}";
   return out;
-}
-
-std::string load_text(std::filesystem::path const& path, bool timer_output = false) {
-  if (!std::filesystem::exists(path)) {
-    std::cout << "#FILE " << path << " not found.\n";
-    return std::string{};
-  }
-
-  alx::dist::benchutil::timer timer;
-
-  std::ifstream t(path);
-  t.seekg(0, std::ios::end);
-  size_t size = t.tellg();
-  std::string buffer(size, ' ');
-  t.seekg(0);
-  t.read(&buffer[0], size);
-
-  if (timer_output) {
-    std::cout << "#READ file from=" << path << " size=" << buffer.size() << " time=" << timer.get_and_reset() << '\n';
-  }
-  // std::cout << " (" << buffer.size() / 1'000'000 << " MB) in " << timer.get_and_reset() << "ms.\n";
-  return buffer;
 }
 
 std::array<size_t, 256> histogram(std::string const& text) {
@@ -222,7 +203,11 @@ std::vector<std::string> load_patterns(std::filesystem::path path, size_t num_pa
   size_t m = get_patterns_length(header);
 
   // extract patterns from file and search them in the index
-  for (size_t i = 0; i < n; ++i) {
+  size_t from = 0;
+  size_t to = n;
+  ifs.seekg(from*m, std::ios_base::cur);
+
+  for (; from < to; ++from) {
     std::string p = std::string();
 
     for (size_t j = 0; j < m; ++j) {
