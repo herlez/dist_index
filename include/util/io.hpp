@@ -205,6 +205,9 @@ std::vector<std::string> load_patterns(std::filesystem::path path, size_t num_pa
   // extract patterns from file and search them in the index
   size_t from = 0;
   size_t to = n;
+
+  std::tie(from, to) = slice_indexes(n, my_rank(), world_size());
+
   ifs.seekg(from*m, std::ios_base::cur);
 
   for (; from < to; ++from) {

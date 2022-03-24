@@ -78,11 +78,11 @@ class bwt {
         for (size_t i = 0; i < m_first_row_starts.size(); ++i) {
           m_first_row_starts[i] += m_exclusive_prefix_histogram[i];
         }
+        // Exclusive scan histogram to get global starting positions
+        std::exclusive_scan(m_first_row_starts.begin(), m_first_row_starts.end(), m_first_row_starts.begin(), 0);
       }
-      // Exclusive scan histogram to get starting positions
-      std::exclusive_scan(m_first_row_starts.begin(), m_first_row_starts.end(), m_first_row_starts.begin(), 0);
+      // Broadcast global starting positions
       MPI_Bcast(m_first_row_starts.data(), m_first_row_starts.size(), my_MPI_SIZE_T, m_world_size - 1, MPI_COMM_WORLD);
-
       io::alxout << m_first_row_starts << "\n";
     }
   }

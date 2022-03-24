@@ -23,109 +23,162 @@ class concatenated_strings {
  public:
   concatenated_strings() = default;
 
-  concatenated_strings(std::vector<std::string> strings, MPI_Comm mpi_comm) {
-    starts_resize(strings.size(), mpi_comm);
-    size_t str_len = (strings.size() == 0) ? 0 : strings[0].size();
-    concat_string_resize(strings.size() * str_len, mpi_comm);
+  concatenated_strings(std::vector<std::string> strings) {
+    // strings_num
+    const size_t local_strings_num = strings.size();
+    MPI_Allreduce(&local_strings_num, &strings_num, 1, my_MPI_SIZE_T, MPI_SUM, MPI_COMM_WORLD);
 
-    int innode_rank;
-    MPI_Comm_rank(mpi_comm, &innode_rank);
+    // strings_len
+    size_t local_strings_len = 0;
+    for (auto const& str : strings) {
+      local_strings_len += str.size();
+    }
+    MPI_Allreduce(&local_strings_len, &strings_len, 1, my_MPI_SIZE_T, MPI_SUM, MPI_COMM_WORLD);
+    io::alxout << "local_strings_num=" <<  local_strings_num << " local_strings_len=" << local_strings_len << "\n";
 
+    // Prepare shared memory windows
+    int innode_size, innode_rank;
+    MPI_Comm COMM_SHARED_MEMORY;
+    MPI_Comm_split(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, my_rank(), &COMM_SHARED_MEMORY);
+    MPI_Comm_size(COMM_SHARED_MEMORY, &innode_size);
+    MPI_Comm_rank(COMM_SHARED_MEMORY, &innode_rank);
+    io::alxout << my_rank() << " innode_size=" << innode_size << " innode_rank=" << innode_rank << "\n";
+
+    int root_size, root_rank;
+    int root_color = (innode_rank == 0) ? 0 : MPI_UNDEFINED;
+    MPI_Comm COMM_ROOTS;
+    MPI_Comm_split(MPI_COMM_WORLD, root_color, my_rank(), &COMM_ROOTS);
     if (innode_rank == 0) {
-      size_t last_str_pos = 0;
-      for (size_t i = 0; i < num_strings; ++i) {
-        auto const& str = strings[i];
-        starts[i] = last_str_pos;
-        std::copy(str.begin(), str.end(), concat_string_data() + last_str_pos);
+      MPI_Comm_size(COMM_ROOTS, &root_size);
+      MPI_Comm_rank(COMM_ROOTS, &root_rank);
+      io::alxout << my_rank() << " root_size=" << root_size << " root_rank=" << root_rank << "\n";
+    }
 
-        last_str_pos += str.size();
+    // Open shared memory windows for starts and conc_string
+    {
+      const int starts_size = (innode_rank == 0) ? strings_num : 0;
+      const int conc_size = (innode_rank == 0) ? strings_len : 0;
+      MPI_Win_allocate_shared(starts_size * sizeof(uint32_t), sizeof(uint32_t), MPI_INFO_NULL, COMM_SHARED_MEMORY, &starts, &window_st);
+      MPI_Win_allocate_shared(conc_size, sizeof(char), MPI_INFO_NULL, COMM_SHARED_MEMORY, &concat_string, &window_cc);
+      MPI_Aint full_win_size;
+      int full_win_disp;
+      MPI_Win_shared_query(window_st, 0, &full_win_size, &full_win_disp, &starts);
+      io::alxout << my_rank() << " win_size=" << full_win_size << " win_disp=" << full_win_disp << "\n";
+      MPI_Win_shared_query(window_cc, 0, &full_win_size, &full_win_disp, &concat_string);
+      io::alxout << my_rank() << " win_size=" << full_win_size << " win_disp=" << full_win_disp << "\n";
+
+      // Initialize share memory window
+      if (innode_rank == 0) {
+        for (size_t i = 0; i < strings_num; ++i) {
+          starts[i] = 0;
+        }
+        for (size_t i = 0; i < strings_len; ++i) {
+          concat_string[i] = 0;
+        }
       }
     }
-    MPI_Barrier(mpi_comm);
-    io::alxout << "Concat_string built. len=" << len_strings << "\n";
+    MPI_Barrier(MPI_COMM_WORLD);
+    print();
+
+    // Local buffers
+    std::vector<uint32_t> local_starts;
+    local_starts.resize(local_strings_num);
+    std::vector<char> local_concat;
+    local_concat.resize(local_strings_len);
+
+    // Prepare
+    size_t strings_before = 0;
+    size_t chars_before = 0;
+    MPI_Exscan(&local_strings_num, &strings_before, 1, my_MPI_SIZE_T, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Exscan(&local_strings_len, &chars_before, 1, my_MPI_SIZE_T, MPI_SUM, MPI_COMM_WORLD);
+    io::alxout << "strings_before=" << strings_before << " chars_before=" << chars_before << "\n";
+
+    // Fill local buffers
+    size_t chars_before_it = chars_before;
+    for (size_t i = 0; i < strings.size(); ++i) {
+      local_starts[i] = chars_before_it;
+      chars_before_it += strings[i].size();
+
+      std::copy(strings[i].begin(), strings[i].end(), local_concat.data() + local_starts[i] - chars_before);
+    }
+    io::alxout << "local_starts: " << local_starts << "\nlocal_concat: " << local_concat << "\n";
+
+    // Share starts with shared memory PEs
+    std::vector<int> recvcounts;
+    recvcounts.resize(innode_size);
+    int sendcount = local_strings_num;
+    MPI_Gather(&sendcount, 1, MPI_INT, recvcounts.data(), 1, MPI_INT, 0, COMM_SHARED_MEMORY);
+
+    std::vector<int> displs;
+    displs.resize(innode_size);
+    std::exclusive_scan(recvcounts.begin(), recvcounts.end(), displs.begin(), strings_before);
+    MPI_Gatherv(local_starts.data(), local_strings_num, MPI_UINT32_T, starts, recvcounts.data(), displs.data(), MPI_UINT32_T, 0, COMM_SHARED_MEMORY);
+    print();
+
+    // Share starts with other shared memory roots
+    if (innode_rank == 0) {
+      MPI_Allreduce(MPI_IN_PLACE, starts, strings_num, MPI_UINT32_T, MPI_SUM, COMM_ROOTS);
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+    print();
+
+    // Share conc with shared memory PEs
+    sendcount = local_strings_len;
+    MPI_Gather(&sendcount, 1, MPI_INT, recvcounts.data(), 1, MPI_INT, 0, COMM_SHARED_MEMORY);
+    std::exclusive_scan(recvcounts.begin(), recvcounts.end(), displs.begin(), chars_before);
+    MPI_Gatherv(local_concat.data(), local_strings_len, MPI_CHAR, concat_string, recvcounts.data(), displs.data(), MPI_CHAR, 0, COMM_SHARED_MEMORY);
+
+    // Share conc with other shared memory roots
+    if (innode_rank == 0) {
+      MPI_Allreduce(MPI_IN_PLACE, concat_string, strings_len, MPI_CHAR, MPI_SUM, COMM_ROOTS);
+    }
+
+    MPI_Barrier(MPI_COMM_WORLD);
+    print();
+    MPI_Comm_free(&COMM_SHARED_MEMORY);
+    if (innode_rank == 0) {
+      MPI_Comm_free(&COMM_ROOTS);
+    }
   }
 
-  ~concatenated_strings() {
-    if ((my_rank() % 20) == 0) {
-      if (concat_string) {
-        // delete[] concat_string;
-      }
-      if (starts) {
-        // delete[] starts;
-      }
+  void destroy() {
+    MPI_Win_free(&window_cc);
+    MPI_Win_free(&window_st);
+  }
+
+  void print() {
+    for (size_t i = 0; i < strings_num; ++i) {
+      io::alxout << starts[i] << " ";
     }
-    // MPI_Win_free(&window_cc);
-    // MPI_Win_free(&window_st);
+    io::alxout << "\n";
+    for (size_t i = 0; i < strings_len; ++i) {
+      io::alxout << concat_string[i];
+    }
+    io::alxout << "\n";
   }
 
   size_t size() const {
-    return num_strings;
+    return strings_num;
   }
 
   size_t length_all_strings() const {
-    return len_strings;
+    return strings_len;
   }
 
   char* concat_string_data() {
     return concat_string;
   }
 
-  void concat_string_resize(size_t k, MPI_Comm mpi_comm) {
-    MPI_Win_allocate_shared(k, sizeof(char), MPI_INFO_NULL, mpi_comm, &concat_string, &window_cc);
-    /*int model, flag;
-    MPI_Win_get_attr(window_cc, MPI_WIN_MODEL, &model, &flag);*/
-    // char* global_cs = concat_string;
-
-    int innode_rank;
-    MPI_Comm_rank(mpi_comm, &innode_rank);
-    io::alxout << "\ninnode_rank=" << innode_rank;
-
-    MPI_Aint win_size;
-    int win_disp;
-    if (innode_rank != 0) {
-      MPI_Win_shared_query(window_cc, my_rank() / 20, &win_size, &win_disp, &concat_string);
-      io::alxout << " win_size=" << win_size << " win_disp=" << win_disp;
-      len_strings = win_size / sizeof(char);
-    } else {
-      len_strings = k;
-    }
-    MPI_Win_fence(0, window_cc);
-
-    io::alxout << "Concat_string resized to " << len_strings << "\n";
-  }
-
   uint32_t* starts_data() {
     return starts;
-  }
-  void starts_resize(size_t k, MPI_Comm mpi_comm) {
-    MPI_Win_allocate_shared(k * sizeof(uint32_t), sizeof(uint32_t), MPI_INFO_NULL, mpi_comm, &starts, &window_st);
-    /*int model, flag;
-    MPI_Win_get_attr(window_st, MPI_WIN_MODEL, &model, &flag);*/
-
-    int innode_rank;
-    MPI_Comm_rank(mpi_comm, &innode_rank);
-    io::alxout << "\ninnode_rank=" << innode_rank;
-
-    MPI_Aint win_size;
-    int win_disp;
-    if (innode_rank != 0) {
-      MPI_Win_shared_query(window_st, my_rank() / 20, &win_size, &win_disp, &starts);
-      io::alxout << " win_size=" << win_size << " win_disp=" << win_disp;
-      num_strings = win_size / sizeof(uint32_t);
-    } else {
-      num_strings = k;
-    }
-    MPI_Win_fence(0, window_st);
-
-    io::alxout << "Start resized to " << num_strings << "\n";
   }
 
   char* operator[](size_t i) const {
     return (concat_string + starts[i]);
   }
 
-  size_t num_strings = 0;
-  size_t len_strings = 0;
+  size_t strings_num = 0;
+  size_t strings_len = 0;
   char* concat_string = nullptr;
   uint32_t* starts = nullptr;
   MPI_Win window_cc;
@@ -148,8 +201,8 @@ class bwt_index {
 
   // Load partial bwt from bwt file.
   bwt_index(t_bwt const& bwt) : m_bwt(&bwt) {
-    static_headstart();
-    //m_headstart_avail = true;
+    //static_headstart();
+    // m_headstart_avail = true;
     MPI_Barrier(MPI_COMM_WORLD);
   }
 
@@ -197,71 +250,19 @@ class bwt_index {
 
   std::vector<size_t>
   occ_batched_preshared(std::vector<std::string> const& patterns) {
-    int innode_size, innode_rank;
-    MPI_Comm COMM_SHARED_MEMORY;
-    MPI_Comm_split(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, my_rank(), &COMM_SHARED_MEMORY);
-    MPI_Comm_size(COMM_SHARED_MEMORY, &innode_size);
-    MPI_Comm_rank(COMM_SHARED_MEMORY, &innode_rank);
-    io::alxout << "\ninnode_size=" << innode_size << " innode_rank=" << innode_rank;
 
-    int root_size, root_rank;
-    int root_color = (innode_rank == 0) ? my_rank() : MPI_UNDEFINED;
-    MPI_Comm COMM_ROOTS;
-    MPI_Comm_split(MPI_COMM_WORLD, root_color, my_rank(), &COMM_ROOTS);
-
-    // Build concatenated string and share between PEs
-
-    concatenated_strings conc_strings(patterns, COMM_SHARED_MEMORY);
+    auto start_time = MPI_Wtime();
+    concatenated_strings conc_strings(patterns);
+    auto end_time = MPI_Wtime();
     io::alxout << "conc_stings_num=" << conc_strings.size() << " conc_strings_length=" << conc_strings.length_all_strings() << '\n';
-    io::alxout << conc_strings.concat_string << '\n';
-    io::alxout << conc_strings.starts << '\n';
-
-    io::alxout << " root_color=" << root_color;
-    if (root_color != MPI_UNDEFINED) {
-      MPI_Comm_size(COMM_ROOTS, &root_size);
-      MPI_Comm_rank(COMM_ROOTS, &root_rank);
-      io::alxout << " root_size=" << root_size << " root_rank=" << root_rank;
-    }
-
-    // Broadcast conc_string.concat_string between nodes
-    // if (root_color != MPI_UNDEFINED) {
-
-    {
-      size_t conc_strings_size = conc_strings.length_all_strings();
-      if (root_color != MPI_UNDEFINED) {
-        MPI_Bcast(&conc_strings_size, 1, my_MPI_SIZE_T, 0, COMM_ROOTS);
-      }
-      if (my_rank() > innode_size) {  // non-root node
-        conc_strings.concat_string_resize(conc_strings_size, COMM_SHARED_MEMORY);
-      }
-      if (root_color != MPI_UNDEFINED) {
-        MPI_Bcast(conc_strings.concat_string_data(), conc_strings_size, MPI_UNSIGNED_CHAR, 0, COMM_ROOTS);
-      }
-    }
-    // Broadcast conc_string.starts between nodes
-
-    {
-      size_t num_patterns = patterns.size();
-      if (root_color != MPI_UNDEFINED) {
-        MPI_Bcast(&num_patterns, 1, my_MPI_SIZE_T, 0, COMM_ROOTS);
-      }
-      if (my_rank() > innode_size) {
-        conc_strings.starts_resize(num_patterns, COMM_SHARED_MEMORY);
-      }
-      if (root_color != MPI_UNDEFINED) {
-        MPI_Bcast(conc_strings.starts_data(), num_patterns, MPI_UINT32_T, 0, COMM_ROOTS);
-      }
-    }
-
-    io::alxout << "conc_stings_num=" << conc_strings.size() << " conc_strings_length=" << conc_strings.length_all_strings() << '\n';
-    io::alxout << conc_strings.concat_string << '\n';
-    io::alxout << conc_strings.starts << '\n';
+    io::benchout << " preshare_time=" << static_cast<size_t>((end_time-start_time)*1000);
 
     // Prepare results
     std::vector<size_t> results;
     results.reserve(patterns.size());
 
     std::vector<rank_query_information> finished_queries = occ<rank_query_information>(patterns, conc_strings);
+    conc_strings.destroy();
 
     if (my_rank() == 0) {
       assert(finished_queries.size() == 2 * patterns.size());
@@ -276,18 +277,20 @@ class bwt_index {
         results.push_back(right - left);
       }
     }
-    MPI_Comm_free(&COMM_SHARED_MEMORY);
-    if (root_color != MPI_UNDEFINED) {
-      MPI_Comm_free(&COMM_ROOTS);
-    }
 
     MPI_Barrier(MPI_COMM_WORLD);
     return results;
   }
 
   std::vector<size_t> occ_batched(std::vector<std::string> const& patterns) {
+    size_t local_patterns_size = patterns.size();
+    size_t global_patterns_size = 0;
+    MPI_Allreduce(&local_patterns_size, &global_patterns_size, 1, my_MPI_SIZE_T, MPI_SUM, MPI_COMM_WORLD);
+
     std::vector<size_t> results;
-    results.reserve(patterns.size());
+    if (my_rank() == 0) {
+      results.reserve(global_patterns_size);
+    }
 
     std::vector<rank_query> finished_queries = occ<rank_query>(patterns);
 
@@ -343,7 +346,9 @@ class bwt_index {
     std::vector<t_query> queries(initialize_queries<t_query>(patterns));
     std::vector<t_query> queries_buffer;
     std::vector<t_query> finished_queries;
-    finished_queries.reserve(patterns.size());
+    if (my_rank() == 0) {
+      finished_queries.reserve(patterns.size());
+    }
 
     io::alxout << '\n'
                << queries << '\n';
@@ -432,6 +437,10 @@ class bwt_index {
 
   template <typename t_query>
   std::vector<t_query> initialize_queries(auto const& patterns) {
+    size_t start_id = 0;
+    size_t local_patterns_size = patterns.size();
+    MPI_Exscan(&local_patterns_size, &start_id, 1, my_MPI_SIZE_T, MPI_SUM, MPI_COMM_WORLD);
+
     std::vector<t_query> queries;
     queries.reserve(patterns.size() * 2);
     io::alxout << "Initializing " << patterns.size() << " queries..\n";
@@ -451,16 +460,16 @@ class bwt_index {
           suffix_length--;
         }
 
-        queries.emplace_back(patterns[i], patterns[i].size() - suffix_length, m_headstart[pattern_suffix].first, i);
+        queries.emplace_back(patterns[i], patterns[i].size() - suffix_length, m_headstart[pattern_suffix].first, start_id + i);
         io::alxout << "Initialized query " << i << ": " << queries.back() << "\n";
-        queries.emplace_back(patterns[i], patterns[i].size() - suffix_length, m_headstart[pattern_suffix].second, i);
+        queries.emplace_back(patterns[i], patterns[i].size() - suffix_length, m_headstart[pattern_suffix].second, start_id + i);
         io::alxout << "Initialized query " << i << ": " << queries.back() << "\n";
       }
     } else {
       for (size_t i = 0; i < patterns.size(); ++i) {
-        queries.emplace_back(patterns[i], patterns[i].size(), 0, i);
+        queries.emplace_back(patterns[i], patterns[i].size(), 0, start_id + i);
         io::alxout << "Initialized query " << i << ": " << queries.back() << "\n";
-        queries.emplace_back(patterns[i], patterns[i].size(), m_bwt->global_size(), i);
+        queries.emplace_back(patterns[i], patterns[i].size(), m_bwt->global_size(), start_id + i);
         io::alxout << "Initialized query " << i << ": " << queries.back() << "\n";
       }
     }

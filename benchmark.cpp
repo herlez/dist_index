@@ -49,19 +49,19 @@ class index_benchmark {
     // Load queries on main node
     std::vector<std::string> patterns;
     {
-      if (world_rank == 0) {
-        alx::dist::benchutil::timer timer;
+      // if (world_rank == 0) {
+      //alx::dist::benchutil::timer timer;
 
-        patterns = alx::dist::io::load_patterns(patterns_path, num_patterns);
-        assert(patterns.size() <= num_patterns);
+      patterns = alx::dist::io::load_patterns(patterns_path, num_patterns);
+      assert(patterns.size() <= num_patterns);
 
-        alx::dist::io::benchout << "patterns_load_time=" << timer.get()
-                                << " patterns_path=" << patterns_path
-                                << " patterns_num=" << patterns.size();
-        if (patterns.size() != 0) {
-          alx::dist::io::benchout << " patterns_len=" << patterns.front().size() << "\n";
-        }
+      /*alx::dist::io::benchout << "patterns_load_time=" << timer.get()
+                              << " patterns_path=" << patterns_path
+                              << " patterns_num=" << patterns.size();
+      if (patterns.size() != 0) {
+        alx::dist::io::benchout << " patterns_len=" << patterns.front().size() << "\n";
       }
+      */
     }
     MPI_Barrier(MPI_COMM_WORLD);
 
@@ -85,16 +85,15 @@ class index_benchmark {
       } else if (mode == benchmark_mode::from_bwt) {
         std::filesystem::path last_row_path = input_path;
         last_row_path += ".bwt";
-        // alx::dist::io::benchout << " last_row_path=" << last_row_path;
 
-        alx::dist::io::alxout << "\n[" << world_rank << "/" << world_size << "]: read bwt from " << last_row_path << "\n";
+        // alx::dist::io::alxout << "\n[" << world_rank << "/" << world_size << "]: read bwt from " << last_row_path << "\n";
         bwt = t_bwt(last_row_path);
-        alx::dist::io::alxout << "[" << world_rank << "/" << world_size << "]: I hold bwt from " << bwt.start_index() << " to " << bwt.end_index() << "\n";
-
-        alx::dist::io::benchout << " bwt_time=" << timer.get_and_reset();
-
         bwt.build_rank();
         bwt.free_bwt();
+        // alx::dist::io::alxout << "[" << world_rank << "/" << world_size << "]: I hold bwt from " << bwt.start_index() << " to " << bwt.end_index() << "\n";
+        alx::dist::io::benchout << " bwt_time=" << timer.get_and_reset();
+
+        
         r_index = t_index(bwt);
 
       } else if (mode == benchmark_mode::from_index) {
