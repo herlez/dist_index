@@ -16,6 +16,7 @@
 #include "query.hpp"
 #include "query_information.hpp"
 #include "util/io.hpp"
+#include "util/string_enumerator.hpp"
 
 namespace alx::dist {
 
@@ -34,15 +35,15 @@ class concatenated_strings {
       local_strings_len += str.size();
     }
     MPI_Allreduce(&local_strings_len, &strings_len, 1, my_MPI_SIZE_T, MPI_SUM, MPI_COMM_WORLD);
-    io::alxout << "local_strings_num=" <<  local_strings_num << " local_strings_len=" << local_strings_len << "\n";
+    io::alxout << "local_strings_num=" << local_strings_num << " local_strings_len=" << local_strings_len << "\n";
 
     // Prepare shared memory windows
     int innode_size, innode_rank;
     MPI_Comm COMM_SHARED_MEMORY;
-    MPI_Comm_split(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, my_rank(), &COMM_SHARED_MEMORY);
+    MPI_Comm_split(MPI_COMM_WORLD, my_rank() / 20, my_rank(), &COMM_SHARED_MEMORY);
     MPI_Comm_size(COMM_SHARED_MEMORY, &innode_size);
     MPI_Comm_rank(COMM_SHARED_MEMORY, &innode_rank);
-    io::alxout << my_rank() << " innode_size=" << innode_size << " innode_rank=" << innode_rank << "\n";
+    // std::cout << my_rank() << " innode_size=" << innode_size << " innode_rank=" << innode_rank << "\n";
 
     int root_size, root_rank;
     int root_color = (innode_rank == 0) ? 0 : MPI_UNDEFINED;
@@ -51,7 +52,7 @@ class concatenated_strings {
     if (innode_rank == 0) {
       MPI_Comm_size(COMM_ROOTS, &root_size);
       MPI_Comm_rank(COMM_ROOTS, &root_rank);
-      io::alxout << my_rank() << " root_size=" << root_size << " root_rank=" << root_rank << "\n";
+      // std::cout << my_rank() << " root_size=" << root_size << " root_rank=" << root_rank << "\n";
     }
 
     // Open shared memory windows for starts and conc_string
@@ -77,6 +78,7 @@ class concatenated_strings {
         }
       }
     }
+
     MPI_Barrier(MPI_COMM_WORLD);
     print();
 
@@ -185,49 +187,83 @@ class concatenated_strings {
   MPI_Win window_st;
 };
 
+std::string code_to_string(size_t code) {
+  std::string str;
+  for (size_t i = 0; i < 8; ++i) {
+    size_t letter = (code >> ((7 - i) * 8)) & 255;
+    if (letter != 0) {
+      str.push_back(letter);
+    }
+  }
+  return str;
+}
+
 template <typename t_bwt>
 class bwt_index {
  private:
   t_bwt const* m_bwt;
 
-  // std::unordered_map<__int128_t, std::pair<size_t, size_t>> m_headstart;
-  bool m_headstart_avail = false;
-  constexpr static size_t m_static_headstart = 1;
-  // std::array<std::pair<size_t, size_t>, (size_t{1} << (m_static_headstart * 8))> m_headstart;
-  std::unordered_map<size_t, std::pair<size_t, size_t>> m_headstart;
+  bool m_head_start_avail = false;
+  bool m_head_start_dynamic = false;
+  size_t max_head_start_entries;
+  std::unordered_map<size_t, std::pair<size_t, size_t>> m_head_start;
 
  public:
   bwt_index() : m_bwt(nullptr) {}
 
   // Load partial bwt from bwt file.
-  bwt_index(t_bwt const& bwt) : m_bwt(&bwt) {
-    //static_headstart();
-    // m_headstart_avail = true;
+  bwt_index(t_bwt const& bwt, bool head_start_dynamic = false, size_t head_start_size = 1'000)
+      : m_bwt(&bwt), m_head_start_dynamic(head_start_dynamic), max_head_start_entries(head_start_size) {
+    auto start_time = MPI_Wtime();
+
+    m_head_start[0] = {0, m_bwt->global_size()};
+    if(head_start_dynamic) {
+      dynamic_head_start();
+    } else {
+      static_head_start();
+    }
+    m_head_start_avail = true;
+    auto end_time = MPI_Wtime();
+    io::benchout << " head_start_dynamic=" << m_head_start_dynamic << " head_start_size=" << m_head_start.size() << " headstart_time=" << static_cast<size_t>((end_time - start_time) * 1000);
+
     MPI_Barrier(MPI_COMM_WORLD);
   }
 
-  void dynamic_headstart() {
+  void dynamic_head_start() {
     //...
   }
 
-  void static_headstart() {
+  void static_head_start() {
     std::vector<std::string> patterns;
 
     if (my_rank() == 0) {
-      patterns.reserve(m_headstart.size());
-      std::string next_string;
-      next_string.resize(m_static_headstart);
-      // for (size_t i = 0; i < 256; ++i) {
-      // for (size_t j = 0; j < 256; ++j) {
-      for (size_t k = 0; k < 256; ++k) {
-        next_string[0] = (char)k;
-        // next_string[1] = (char)j;
-        // next_string[2] = (char)i;
-        patterns.push_back(next_string);
+      // Calculate alphabet
+      std::array<size_t, 256> first_row_starts = m_bwt->first_row_starts();
+      std::vector<unsigned char> alphabet;
+      for (size_t i = 1; i < first_row_starts.size(); ++i) {
+        if (first_row_starts[i] > first_row_starts[i - 1]) {
+          alphabet.push_back(i - 1);
+        }
       }
-      //}
-      //}
+      if (m_bwt->size() > first_row_starts.back()) {
+        alphabet.push_back(255);
+      }
+      io::benchout << " sigma=" << alphabet.size();
+
+      // Enumerate over all strings form this alphabet up to max_head_start_entries strings or t_headstart depth
+      util::string_enumerator str_enumerator(alphabet);
+      for (size_t i = 0; i < max_head_start_entries; ++i) {
+        patterns.push_back(str_enumerator.get());
+        str_enumerator.next();
+      }
+      io::benchout << " max_headstart_depth=" << size_t{str_enumerator.current_length()};
     }
+    /*for (auto const& p : patterns) {
+      std::cout << p << "\n";
+    }*/
+
+    // SHARE FINISHED QUERIES AND BUILD LOOKUP MAP TODO
+    m_head_start[0] = {0, m_bwt->global_size()};
 
     std::vector<rank_query> finished_queries = occ<rank_query>(patterns);
 
@@ -236,12 +272,17 @@ class bwt_index {
       std::sort(finished_queries.begin(), finished_queries.end(), [](auto const& left, auto const& right) {
         return left.m_id < right.m_id;
       });
+      /*for (auto & q : finished_queries) {
+        std::cout << q << ": " << q.get_code() << "\n";
+      }*/
 
       for (size_t i = 0; i < finished_queries.size(); i += 2) {
         size_t left, right;
         std::tie(left, right) = std::minmax(finished_queries[i].m_border.u64(), finished_queries[i + 1].m_border.u64());
-        m_headstart[i / 2].first = left;
-        m_headstart[i / 2].second = right;
+
+        size_t code = finished_queries[i].get_code();
+        m_head_start[code].first = left;
+        m_head_start[code].second = right;
 
         io::alxout << "Result: " << right - left << "\n";
       }
@@ -250,12 +291,11 @@ class bwt_index {
 
   std::vector<size_t>
   occ_batched_preshared(std::vector<std::string> const& patterns) {
-
     auto start_time = MPI_Wtime();
     concatenated_strings conc_strings(patterns);
     auto end_time = MPI_Wtime();
     io::alxout << "conc_stings_num=" << conc_strings.size() << " conc_strings_length=" << conc_strings.length_all_strings() << '\n';
-    io::benchout << " preshare_time=" << static_cast<size_t>((end_time-start_time)*1000);
+    io::benchout << " preshare_time=" << static_cast<size_t>((end_time - start_time) * 1000);
 
     // Prepare results
     std::vector<size_t> results;
@@ -445,8 +485,24 @@ class bwt_index {
     queries.reserve(patterns.size() * 2);
     io::alxout << "Initializing " << patterns.size() << " queries..\n";
 
-    if (m_headstart_avail) {
+    if (m_head_start_avail) {
       for (size_t i = 0; i < patterns.size(); ++i) {
+        auto const& pat = patterns[i];
+        size_t pattern_suffix = 0;
+        size_t suffix_length = 0;
+
+        while (m_head_start.contains(pattern_suffix) && suffix_length < 8) {
+          ++suffix_length;
+          pattern_suffix += (pat[pat.size() - suffix_length] << ((suffix_length - 1) * 8));
+          io::alxout << "Lets try: " << code_to_string(pattern_suffix) << "\n";
+        }
+        if (!m_head_start.contains(pattern_suffix)) {
+          pattern_suffix -= (pat[pat.size() - suffix_length] << ((suffix_length - 1) * 8));
+          --suffix_length;
+          io::alxout << "It failed, so we take: " << code_to_string(pattern_suffix) << "\n";
+        }
+
+        /*
         size_t pattern_suffix = 0;
         size_t suffix_length = 0;
         for (auto rev_iterator = patterns[i].rbegin(); rev_iterator != patterns[i].rbegin() + m_static_headstart; ++rev_iterator) {
@@ -455,16 +511,18 @@ class bwt_index {
           ++suffix_length;
         }
 
-        while (m_headstart.find(pattern_suffix) == m_headstart.end()) {
+        while (m_head_start.find(pattern_suffix) == m_head_start.end()) {
           pattern_suffix >>= 8;
           suffix_length--;
         }
+        */
 
-        queries.emplace_back(patterns[i], patterns[i].size() - suffix_length, m_headstart[pattern_suffix].first, start_id + i);
+        queries.emplace_back(patterns[i], patterns[i].size() - suffix_length, m_head_start[pattern_suffix].first, start_id + i);
         io::alxout << "Initialized query " << i << ": " << queries.back() << "\n";
-        queries.emplace_back(patterns[i], patterns[i].size() - suffix_length, m_headstart[pattern_suffix].second, start_id + i);
+        queries.emplace_back(patterns[i], patterns[i].size() - suffix_length, m_head_start[pattern_suffix].second, start_id + i);
         io::alxout << "Initialized query " << i << ": " << queries.back() << "\n";
       }
+
     } else {
       for (size_t i = 0; i < patterns.size(); ++i) {
         queries.emplace_back(patterns[i], patterns[i].size(), 0, start_id + i);

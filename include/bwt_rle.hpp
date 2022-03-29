@@ -105,15 +105,12 @@ class bwt_rle {
   int world_rank() const {
     return m_world_rank;
   }
-  /*size_t last_row_size() {
-    return m_run_letters.size();
+  std::array<size_t, 256> exclusive_prefix_histogram() const {
+    return m_exclusive_prefix_histogram;
   }
-  alx::ustring::value_type access_bwt(size_t i) const {
-    return m_run_letters[i];
+  std::array<size_t, 256> first_row_starts() const {
+    return m_first_row_starts;
   }
-  alx::ustring::value_type access_wm(size_t i) const {
-    return m_wm->operator[](i);
-  }*/
 
   // Return size of bwt slice.
   size_t size() const {

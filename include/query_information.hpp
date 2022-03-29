@@ -21,7 +21,7 @@ struct rank_query_information {
   }
 
   uint32_t m_id;
-  uint16_t m_pos_in_pattern;
+  uint8_t m_pos_in_pattern;
   tdc::uint40_t m_border;
 
   friend std::ostream &operator<<(std::ostream &os, const rank_query_information query) {

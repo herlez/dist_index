@@ -67,8 +67,8 @@ class bwt {
       MPI_Barrier(MPI_COMM_WORLD);
       MPI_Exscan(m_first_row_starts.data(), m_exclusive_prefix_histogram.data(), 256, my_MPI_SIZE_T, MPI_SUM, MPI_COMM_WORLD);
 
-      // io::::alxout << m_first_row_starts << "\n";
-      // io::alxout << m_exclusive_prefix_histogram << "\n";
+      io::alxout << m_first_row_starts << "\n";
+      io::alxout << m_exclusive_prefix_histogram << "\n";
     }
 
     // Broadcast start of runs in first row
@@ -79,7 +79,8 @@ class bwt {
           m_first_row_starts[i] += m_exclusive_prefix_histogram[i];
         }
         // Exclusive scan histogram to get global starting positions
-        std::exclusive_scan(m_first_row_starts.begin(), m_first_row_starts.end(), m_first_row_starts.begin(), 0);
+        std::exclusive_scan(m_first_row_starts.begin(), m_first_row_starts.end(), m_first_row_starts.begin(), size_t{0});
+        io::alxout << m_first_row_starts << "\n";
       }
       // Broadcast global starting positions
       MPI_Bcast(m_first_row_starts.data(), m_first_row_starts.size(), my_MPI_SIZE_T, m_world_size - 1, MPI_COMM_WORLD);

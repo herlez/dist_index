@@ -25,6 +25,8 @@ class index_benchmark {
   std::filesystem::path input_path;
   std::filesystem::path patterns_path;
   size_t num_patterns{std::numeric_limits<size_t>::max()};
+  size_t head_start_size = 1'000;
+  bool head_start_dynamic = false;
 
  public:
   template <typename t_bwt, typename t_index>
@@ -50,7 +52,7 @@ class index_benchmark {
     std::vector<std::string> patterns;
     {
       // if (world_rank == 0) {
-      //alx::dist::benchutil::timer timer;
+      // alx::dist::benchutil::timer timer;
 
       patterns = alx::dist::io::load_patterns(patterns_path, num_patterns);
       assert(patterns.size() <= num_patterns);
@@ -93,8 +95,7 @@ class index_benchmark {
         // alx::dist::io::alxout << "[" << world_rank << "/" << world_size << "]: I hold bwt from " << bwt.start_index() << " to " << bwt.end_index() << "\n";
         alx::dist::io::benchout << " bwt_time=" << timer.get_and_reset();
 
-        
-        r_index = t_index(bwt);
+        r_index = t_index(bwt, head_start_dynamic, head_start_size);
 
       } else if (mode == benchmark_mode::from_index) {
         std::cerr << "Build from index file not supported yet.\n";
@@ -167,13 +168,70 @@ int main(int argc, char** argv) {
   benchmark.patterns_path = patterns_path;
   benchmark.mode = static_cast<benchmark_mode>(mode);
 
-  // benchmark.run<alx::dist::bwt, alx::dist::bwt_index<alx::dist::bwt>>("fm_single");
-  benchmark.run<alx::dist::bwt, alx::dist::bwt_index<alx::dist::bwt>>("fm_batch");
+  // Benchmark different static top trie sizes
+  /*{
+    for (size_t hs = 1; hs < size_t{2} << 22; hs <<= 2) {
+      benchmark.head_start_dynamic = false;
+      benchmark.head_start_size = hs;
+      benchmark.run<alx::dist::bwt_rle, alx::dist::bwt_index<alx::dist::bwt_rle>>("r_batch");
+    }
+  }*/
+  // Benchmark different dynamic top trie sizes
+  /*{
+    for (size_t hs = 1; hs < size_t{2} << 22; hs <<= 2) {
+      benchmark.head_start_dynamic = true;
+      benchmark.head_start_size = hs;
+      benchmark.run<alx::dist::bwt_rle, alx::dist::bwt_index<alx::dist::bwt_rle>>("r_batch");
+    }
+  }*/
+
+  // Benchmark FM-index for different query batch sizes
+  {
+    size_t old_q_size = benchmark.num_patterns;
+    for (size_t q_size = 1; q_size <= old_q_size; q_size *= 2) {
+      benchmark.num_patterns = q_size;
+      benchmark.run<alx::dist::bwt, alx::dist::bwt_index<alx::dist::bwt>>("fm_batch");
+    }
+    benchmark.num_patterns = old_q_size;
+  }
+  {
+    size_t old_q_size = benchmark.num_patterns;
+    for (size_t q_size = 1; q_size <= old_q_size; q_size *= 2) {
+      benchmark.num_patterns = q_size;
+      benchmark.run<alx::dist::bwt, alx::dist::bwt_index<alx::dist::bwt>>("fm_batch");
+    }
+    benchmark.num_patterns = old_q_size;
+  }
+
+  // Benchmark r-index for different query batch sizes
+  {
+    size_t old_q_size = benchmark.num_patterns;
+    for (size_t q_size = 1; q_size <= old_q_size; q_size *= 2) {
+      benchmark.num_patterns = q_size;
+      benchmark.run<alx::dist::bwt_rle, alx::dist::bwt_index<alx::dist::bwt_rle>>("r_batch");
+    }
+    benchmark.num_patterns = old_q_size;
+  }
+  {
+    size_t old_q_size = benchmark.num_patterns;
+    for (size_t q_size = 1; q_size <= old_q_size; q_size *= 2) {
+      benchmark.num_patterns = q_size;
+      benchmark.run<alx::dist::bwt_rle, alx::dist::bwt_index<alx::dist::bwt_rle>>("r_batch_preshared");
+    }
+    benchmark.num_patterns = old_q_size;
+  }
+
+  // Benchmark FM-Index
+  /*benchmark.run<alx::dist::bwt, alx::dist::bwt_index<alx::dist::bwt>>("fm_batch");
   benchmark.run<alx::dist::bwt, alx::dist::bwt_index<alx::dist::bwt>>("fm_batch_preshared");
 
-  // benchmark.run<alx::dist::bwt_rle, alx::dist::bwt_index<alx::dist::bwt_rle>>("r_single");
+  // Benchmark r-Index
   benchmark.run<alx::dist::bwt_rle, alx::dist::bwt_index<alx::dist::bwt_rle>>("r_batch");
-  benchmark.run<alx::dist::bwt_rle, alx::dist::bwt_index<alx::dist::bwt_rle>>("r_batch_preshared");
+  benchmark.run<alx::dist::bwt_rle, alx::dist::bwt_index<alx::dist::bwt_rle>>("r_batch_preshared");*/
+
+  // deprecated
+  // benchmark.run<alx::dist::bwt, alx::dist::bwt_index<alx::dist::bwt>>("fm_single");
+  // benchmark.run<alx::dist::bwt_rle, alx::dist::bwt_index<alx::dist::bwt_rle>>("r_single");
 
   // Finalize the MPI environment.
   MPI_Finalize();

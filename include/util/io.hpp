@@ -204,11 +204,25 @@ std::vector<std::string> load_patterns(std::filesystem::path path, size_t num_pa
 
   // extract patterns from file and search them in the index
   size_t from = 0;
-  size_t to = n;
+  size_t to = 0;  // n
 
-  std::tie(from, to) = slice_indexes(n, my_rank(), world_size());
+  // std::tie(from, to) = slice_indexes(n, my_rank(), world_size());
+  int innode_rank;
+  MPI_Comm COMM_SHARED_MEMORY;
+  MPI_Comm_split(MPI_COMM_WORLD, my_rank()/20, my_rank(), &COMM_SHARED_MEMORY);
+  MPI_Comm_rank(COMM_SHARED_MEMORY, &innode_rank);
+  
+  int root_size, root_rank;
+  int root_color = (innode_rank == 0) ? 0 : MPI_UNDEFINED;
+  MPI_Comm COMM_ROOTS;
+  MPI_Comm_split(MPI_COMM_WORLD, root_color, my_rank(), &COMM_ROOTS);
+  if (innode_rank == 0) {
+    MPI_Comm_size(COMM_ROOTS, &root_size);
+    MPI_Comm_rank(COMM_ROOTS, &root_rank);
+    std::tie(from, to) = slice_indexes(n, root_rank, root_size);
+  }
 
-  ifs.seekg(from*m, std::ios_base::cur);
+  ifs.seekg(from * m, std::ios_base::cur);
 
   for (; from < to; ++from) {
     std::string p = std::string();

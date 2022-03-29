@@ -15,6 +15,7 @@ struct rank_query {
   }
 
   rank_query([[maybe_unused]] std::string const &pattern, size_t pattern_length, size_t border, size_t id) {
+    std::memset(m_pattern, 0, 30);
     std::memcpy(reinterpret_cast<char *>(m_pattern), pattern.c_str(), pattern.size());
     m_pos_in_pattern = pattern_length;
     m_border = border;
@@ -30,6 +31,14 @@ struct rank_query {
     return m_pattern[m_pos_in_pattern];
   }
 
+  size_t get_code() {
+    size_t code = 0;
+    for(size_t i = 0; m_pattern[i] != 0 && i < 8; ++i) {
+      code <<= 8;
+      code += m_pattern[i];
+    }
+    return code;
+  }
   friend std::ostream &operator<<(std::ostream &os, const rank_query query) {
     return os << "id=" << query.m_id << "[" << (int)query.m_pos_in_pattern << "]=" << std::string(query.m_pattern, query.m_pattern + query.m_pos_in_pattern) << " border=" << query.m_border;
   }
