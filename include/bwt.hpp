@@ -136,7 +136,8 @@ class bwt {
     size_t local_pos;
     std::tie(slice, local_pos) = locate_bwt_slice(global_pos, m_global_size, m_world_size);
     assert(slice == m_world_rank);
-    // io::alxout << "Answering rank. global_pos=" << global_pos << " local_pos=" << local_pos << " world_size=" << m_world_size << " c=" << c << "\n";
+    io::alxout << "Answering rank. global_pos=" << global_pos << " local_pos=" << local_pos << " world_size=" << m_world_size << " c=" << c << "\n";
+    io::alxout << "Result: " << m_exclusive_prefix_histogram[c] + local_rank(local_pos, c) <<  "\n";
     return m_exclusive_prefix_histogram[c] + local_rank(local_pos, c);
   }
 

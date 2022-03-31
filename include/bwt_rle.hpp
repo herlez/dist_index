@@ -131,7 +131,7 @@ class bwt_rle {
     size_t run_start = m_run_starts[kth_run].u64();
     size_t num_c_run = run_rank(c, kth_run);
     unsigned char run_symbol = m_run_letters[kth_run];
-    return size_t{m_run_lengths[c][num_c_run]} + (c == run_symbol ? (local_pos - run_start) : 0);
+    return size_t{m_run_lengths[c][num_c_run]} + (c == run_symbol ? (local_pos - run_start + 1) : 0);
     // return m_run_letters_wm->rank(local_pos, c);
   }
 
@@ -140,7 +140,7 @@ class bwt_rle {
     size_t local_pos;
     std::tie(slice, local_pos) = bwt::locate_bwt_slice(global_pos, m_global_size, m_world_size);
     assert(slice == m_world_rank);
-    // io::alxout << "Answering rank. global_pos=" << global_pos << " local_pos=" << local_pos << " world_size=" << m_world_size << " c=" << c << "\n";
+    io::alxout << "Answering rank. global_pos=" << global_pos << " local_pos=" << local_pos << " world_size=" << m_world_size << " c=" << c << "\n";
     return m_exclusive_prefix_histogram[c] + local_rank(local_pos, c);
   }
 

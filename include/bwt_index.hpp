@@ -217,12 +217,12 @@ class bwt_index {
     auto start_time = MPI_Wtime();
 
     m_head_start[0] = {0, m_bwt->global_size()};
-    if(head_start_dynamic) {
+    /*if(head_start_dynamic) {
       dynamic_head_start();
     } else {
       static_head_start();
-    }
-    m_head_start_avail = true;
+    }*/
+    //m_head_start_avail = true;
     auto end_time = MPI_Wtime();
     io::benchout << " head_start_dynamic=" << m_head_start_dynamic << " head_start_size=" << m_head_start.size() << " headstart_time=" << static_cast<size_t>((end_time - start_time) * 1000);
 
