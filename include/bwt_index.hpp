@@ -9,6 +9,7 @@
 #include <iostream>
 #include <numeric>
 #include <string>
+#include <tuple>
 #include <vector>
 #include <wavelet_tree/wavelet_tree.hpp>
 
@@ -217,12 +218,12 @@ class bwt_index {
     auto start_time = MPI_Wtime();
 
     m_head_start[0] = {0, m_bwt->global_size()};
-    /*if(head_start_dynamic) {
+    if (head_start_dynamic) {
       dynamic_head_start();
     } else {
       static_head_start();
-    }*/
-    //m_head_start_avail = true;
+    }
+    m_head_start_avail = true;
     auto end_time = MPI_Wtime();
     io::benchout << " head_start_dynamic=" << m_head_start_dynamic << " head_start_size=" << m_head_start.size() << " headstart_time=" << static_cast<size_t>((end_time - start_time) * 1000);
 
@@ -230,7 +231,164 @@ class bwt_index {
   }
 
   void dynamic_head_start() {
-    //...
+    const size_t up_to_per_round = max_head_start_entries / 2;
+    std::vector<unsigned char> alphabet;
+    std::vector<std::string> patterns;
+    size_t trie_depth = 0;
+
+    std::vector<std::tuple<size_t, size_t, size_t>> final_head_start_candidates;
+    std::vector<std::tuple<size_t, size_t, size_t>> head_start_candidates;
+
+    // Prepare pattern for iteration 0
+    if (my_rank() == 0) {
+      // Calculate alphabet
+      std::array<size_t, 256> first_row_starts = m_bwt->first_row_starts();
+
+      for (size_t i = 1; i < first_row_starts.size(); ++i) {
+        if (first_row_starts[i] > first_row_starts[i - 1]) {
+          alphabet.push_back(i - 1);
+        }
+      }
+      if (m_bwt->size() > first_row_starts.back()) {
+        alphabet.push_back(255);
+      }
+      io::benchout << " sigma=" << alphabet.size();
+
+      // Enumerate over all strings form this alphabet up to max_head_start_entries strings or t_headstart depth
+      util::string_enumerator str_enumerator(alphabet);
+      str_enumerator.next();                              // To skip empty string
+      for (size_t i = 0; i < alphabet.size() - 1; ++i) {  //-1 because we skipped empty word
+        patterns.push_back(str_enumerator.get());
+        str_enumerator.next();
+      }
+      /*for (auto const& p : patterns) {
+        std::cout << p << "\n";
+      }*/
+    }
+
+    // Loop:
+    bool global_finished = false;
+    {
+      while (!global_finished) {
+        ++trie_depth;
+        // Get new patterns for later iterations
+        if (my_rank() == 0 && final_head_start_candidates.size() != 0) {
+          patterns.clear();
+          // Fill first half of patterns with new entries
+          size_t i = 0;
+          size_t start_index_for_new_entries = 0;
+          size_t end_index_for_new_entries = std::min(head_start_candidates.size(), up_to_per_round);
+          while ((i < max_head_start_entries / 2) && start_index_for_new_entries < end_index_for_new_entries) {
+            // new str_enumerator
+            std::string str_enum = code_to_string(std::get<0>(head_start_candidates[start_index_for_new_entries]));
+            //std::cout << "Root: " << str_enum << "\n";
+            str_enum.push_back(0);
+            for (size_t j = 1; j < alphabet.size(); ++j) {
+              str_enum.back() = alphabet[j];
+              patterns.push_back(str_enum);
+              //std::cout << str_enum << "\n";
+              ++i;
+            }
+            ++start_index_for_new_entries;
+          }
+
+          // Fill second half with patterns from the last rounds
+          size_t start_index_for_old_entries = end_index_for_new_entries;
+          size_t end_index_for_old_entries = head_start_candidates.size();
+          while (i < max_head_start_entries && start_index_for_old_entries < end_index_for_old_entries) {
+            patterns.push_back(code_to_string(std::get<0>(head_start_candidates[start_index_for_old_entries])));
+            ++start_index_for_old_entries;
+            ++i;
+          }
+          /*for (auto const& p : patterns) {
+            std::cout << p << "\n";
+          }*/
+        }
+
+        // Answer queries and sort them
+        std::vector<rank_query> finished_queries = occ<rank_query>(patterns);
+        if (my_rank() == 0) {
+          std::sort(finished_queries.begin(), finished_queries.end(), [](auto const& left, auto const& right) {
+            return left.m_id < right.m_id;
+          });
+          /*for (auto const& q : finished_queries) {
+            std::cout << q << "\n";
+          }*/
+        }
+
+        // Pack queries into tuples and sort them by range
+        if (my_rank() == 0) {
+          head_start_candidates.resize(finished_queries.size() / 2);
+          for (size_t i = 0; i < finished_queries.size(); i += 2) {
+            size_t left, right;
+            std::tie(left, right) = std::minmax(finished_queries[i].m_border.u64(), finished_queries[i + 1].m_border.u64());
+
+            head_start_candidates[i / 2] = {finished_queries[i].get_code(), left, right};
+          }
+          std::sort(head_start_candidates.begin(), head_start_candidates.end(), [](auto const& left, auto const& right) {
+            return ((std::get<2>(left) - std::get<1>(left)) > (std::get<2>(right) - std::get<1>(right)));
+          });
+        }
+        /*for (auto const& cand : head_start_candidates) {
+          std::cout << std::get<0>(cand) << " " << std::get<1>(cand) << "." << std::get<2>(cand) << "\n";
+        }*/
+        // Store candidates with biggest interval as final candidates
+        if (my_rank() == 0) {
+          size_t up_to = std::min(std::min(head_start_candidates.size(), up_to_per_round),
+                                  max_head_start_entries - final_head_start_candidates.size());
+          //std::cout << "up_to=" << up_to << "\n";
+          std::copy(head_start_candidates.begin(), head_start_candidates.begin() + up_to,
+                    std::back_inserter(final_head_start_candidates));
+        }
+        /*for (auto const& cand : final_head_start_candidates) {
+          std::cout << std::get<0>(cand) << " " << std::get<1>(cand) << "+" << std::get<2>(cand) << "\n";
+        }*/
+        // Stop when we have the maximum number of candidates or when we reached trie_depth 8, because codes can't handle longer strings
+        if (final_head_start_candidates.size() >= max_head_start_entries || trie_depth >= 8) {
+          global_finished = true;
+        }
+        MPI_Bcast(&global_finished, 1, MPI_CXX_BOOL, 0, MPI_COMM_WORLD);
+      }
+    }
+
+    // Share final candidates between roots and add them to m_head_start
+    {
+      // Share size between roots
+      size_t head_start_candidates_taken = final_head_start_candidates.size();
+      int innode_rank;
+      MPI_Comm COMM_SHARED_MEMORY;
+      MPI_Comm_split(MPI_COMM_WORLD, my_rank() / 20, my_rank(), &COMM_SHARED_MEMORY);
+      MPI_Comm_rank(COMM_SHARED_MEMORY, &innode_rank);
+
+      int root_color = (innode_rank == 0) ? 0 : MPI_UNDEFINED;
+      MPI_Comm COMM_ROOTS;
+      MPI_Comm_split(MPI_COMM_WORLD, root_color, my_rank(), &COMM_ROOTS);
+      if (innode_rank == 0) {
+        MPI_Bcast(&final_head_start_candidates, 1, my_MPI_SIZE_T, 0, COMM_ROOTS);
+        final_head_start_candidates.resize(head_start_candidates_taken);
+
+        MPI_Bcast(&final_head_start_candidates, head_start_candidates_taken * 3, my_MPI_SIZE_T, 0, COMM_ROOTS);
+        MPI_Comm_free(&COMM_ROOTS);
+
+        // Add candidates to map
+        
+        for (auto const& cand : final_head_start_candidates) {
+          size_t code = std::get<0>(cand);
+          m_head_start[code].first = std::get<1>(cand);
+          m_head_start[code].second = std::get<2>(cand);
+        }
+      }
+      MPI_Comm_free(&COMM_SHARED_MEMORY);
+      
+      //std::cout << "End candidates: " << final_head_start_candidates.size() << "\n";
+      /*for (auto const& cand : final_head_start_candidates) {
+        std::cout << std::get<0>(cand) << " " << std::get<1>(cand) << " " << std::get<2>(cand) << "\n";
+      }
+      for (auto const& e : m_head_start) {
+        std::cout << e.first << " " << e.second.first << "-" << e.second.second << "\n";
+      }*/
+      io::benchout << " max_headstart_depth=" << trie_depth;
+    }
   }
 
   void static_head_start() {
@@ -262,9 +420,8 @@ class bwt_index {
       std::cout << p << "\n";
     }*/
 
-    // SHARE FINISHED QUERIES AND BUILD LOOKUP MAP TODO
+    // Calculate headstart queries
     m_head_start[0] = {0, m_bwt->global_size()};
-
     std::vector<rank_query> finished_queries = occ<rank_query>(patterns);
 
     if (my_rank() == 0) {
@@ -272,9 +429,27 @@ class bwt_index {
       std::sort(finished_queries.begin(), finished_queries.end(), [](auto const& left, auto const& right) {
         return left.m_id < right.m_id;
       });
-      /*for (auto & q : finished_queries) {
-        std::cout << q << ": " << q.get_code() << "\n";
-      }*/
+    }
+
+    size_t finished_queries_size = finished_queries.size();
+
+    int innode_rank;
+    MPI_Comm COMM_SHARED_MEMORY;
+    MPI_Comm_split(MPI_COMM_WORLD, my_rank() / 20, my_rank(), &COMM_SHARED_MEMORY);
+    MPI_Comm_rank(COMM_SHARED_MEMORY, &innode_rank);
+
+    int root_color = (innode_rank == 0) ? 0 : MPI_UNDEFINED;
+    MPI_Comm COMM_ROOTS;
+    MPI_Comm_split(MPI_COMM_WORLD, root_color, my_rank(), &COMM_ROOTS);
+    if (innode_rank == 0) {
+      MPI_Bcast(&finished_queries_size, 1, my_MPI_SIZE_T, 0, COMM_ROOTS);
+      finished_queries.resize(finished_queries_size);
+      MPI_Datatype query_mpi_type = rank_query::mpi_type();
+      MPI_Type_commit(&query_mpi_type);
+
+      MPI_Bcast(&finished_queries, finished_queries_size, query_mpi_type, 0, COMM_ROOTS);
+      MPI_Comm_free(&COMM_ROOTS);
+      MPI_Type_free(&query_mpi_type);
 
       for (size_t i = 0; i < finished_queries.size(); i += 2) {
         size_t left, right;
@@ -287,6 +462,7 @@ class bwt_index {
         io::alxout << "Result: " << right - left << "\n";
       }
     }
+    MPI_Comm_free(&COMM_SHARED_MEMORY);
   }
 
   std::vector<size_t>
@@ -501,21 +677,6 @@ class bwt_index {
           --suffix_length;
           io::alxout << "It failed, so we take: " << code_to_string(pattern_suffix) << "\n";
         }
-
-        /*
-        size_t pattern_suffix = 0;
-        size_t suffix_length = 0;
-        for (auto rev_iterator = patterns[i].rbegin(); rev_iterator != patterns[i].rbegin() + m_static_headstart; ++rev_iterator) {
-          pattern_suffix *= 256;
-          pattern_suffix += static_cast<unsigned char>(*rev_iterator);
-          ++suffix_length;
-        }
-
-        while (m_head_start.find(pattern_suffix) == m_head_start.end()) {
-          pattern_suffix >>= 8;
-          suffix_length--;
-        }
-        */
 
         queries.emplace_back(patterns[i], patterns[i].size() - suffix_length, m_head_start[pattern_suffix].first, start_id + i);
         io::alxout << "Initialized query " << i << ": " << queries.back() << "\n";

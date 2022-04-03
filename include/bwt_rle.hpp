@@ -131,7 +131,7 @@ class bwt_rle {
     size_t run_start = m_run_starts[kth_run].u64();
     size_t num_c_run = run_rank(c, kth_run);
     unsigned char run_symbol = m_run_letters[kth_run];
-    return size_t{m_run_lengths[c][num_c_run]} + (c == run_symbol ? (local_pos - run_start + 1) : 0);
+    return size_t{m_run_lengths[c][num_c_run]} + (c == run_symbol ? (local_pos - run_start) : 0);
     // return m_run_letters_wm->rank(local_pos, c);
   }
 

@@ -169,21 +169,21 @@ int main(int argc, char** argv) {
   benchmark.mode = static_cast<benchmark_mode>(mode);
 
   // Benchmark different static top trie sizes
-  /*{
+  {
     for (size_t hs = 1; hs < size_t{2} << 22; hs <<= 2) {
       benchmark.head_start_dynamic = false;
       benchmark.head_start_size = hs;
       benchmark.run<alx::dist::bwt_rle, alx::dist::bwt_index<alx::dist::bwt_rle>>("r_batch");
     }
-  }*/
+  }
   // Benchmark different dynamic top trie sizes
-  /*{
+  {
     for (size_t hs = 1; hs < size_t{2} << 22; hs <<= 2) {
       benchmark.head_start_dynamic = true;
       benchmark.head_start_size = hs;
       benchmark.run<alx::dist::bwt_rle, alx::dist::bwt_index<alx::dist::bwt_rle>>("r_batch");
     }
-  }*/
+  }
 
   // Benchmark FM-index for different query batch sizes
   /*{
@@ -226,7 +226,7 @@ int main(int argc, char** argv) {
   //benchmark.run<alx::dist::bwt, alx::dist::bwt_index<alx::dist::bwt>>("fm_batch_preshared");
 
   // Benchmark r-Index
-  benchmark.run<alx::dist::bwt_rle, alx::dist::bwt_index<alx::dist::bwt_rle>>("r_batch");
+  //benchmark.run<alx::dist::bwt_rle, alx::dist::bwt_index<alx::dist::bwt_rle>>("r_batch");
   //benchmark.run<alx::dist::bwt_rle, alx::dist::bwt_index<alx::dist::bwt_rle>>("r_batch_preshared");
 
   // deprecated

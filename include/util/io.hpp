@@ -209,9 +209,9 @@ std::vector<std::string> load_patterns(std::filesystem::path path, size_t num_pa
   // std::tie(from, to) = slice_indexes(n, my_rank(), world_size());
   int innode_rank;
   MPI_Comm COMM_SHARED_MEMORY;
-  MPI_Comm_split(MPI_COMM_WORLD, my_rank()/20, my_rank(), &COMM_SHARED_MEMORY);
+  MPI_Comm_split(MPI_COMM_WORLD, my_rank() / 20, my_rank(), &COMM_SHARED_MEMORY);
   MPI_Comm_rank(COMM_SHARED_MEMORY, &innode_rank);
-  
+
   int root_size, root_rank;
   int root_color = (innode_rank == 0) ? 0 : MPI_UNDEFINED;
   MPI_Comm COMM_ROOTS;
@@ -233,6 +233,10 @@ std::vector<std::string> load_patterns(std::filesystem::path path, size_t num_pa
       p += c;
     }
     patterns.push_back(p);
+  }
+  MPI_Comm_free(&COMM_SHARED_MEMORY);
+  if (innode_rank == 0) {
+    MPI_Comm_free(&COMM_ROOTS);
   }
 
   return patterns;
