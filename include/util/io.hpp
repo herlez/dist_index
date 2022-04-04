@@ -35,6 +35,17 @@ namespace alx::dist {
 #error "what is happening here?"
 #endif
 
+size_t intpow(size_t x, unsigned int p) {
+  if (p == 0) return 1;
+  if (p == 1) return x;
+
+  size_t tmp = intpow(x, p / 2);
+  if (p % 2 == 0)
+    return tmp * tmp;
+  else
+    return x * tmp * tmp;
+}
+
 int my_rank() {
   int rank;
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);

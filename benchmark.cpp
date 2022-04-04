@@ -129,7 +129,7 @@ class index_benchmark {
 
       if (world_rank == 0) {
         alx::dist::io::benchout << " c_time=" << timer.get_and_reset()
-                                << " num_patterns=" << patterns.size()
+                                << " num_patterns=" << patterns.size() * ((1 + (world_size-1)/20))
                                 << " c_sum=" << std::accumulate(count_results.begin(), count_results.end(), 0)
                                 << "\n";
       } else {
@@ -169,24 +169,24 @@ int main(int argc, char** argv) {
   benchmark.mode = static_cast<benchmark_mode>(mode);
 
   // Benchmark different static top trie sizes
-  {
-    for (size_t hs = 1; hs < size_t{2} << 22; hs <<= 2) {
+  /*{
+    for (size_t hs = 16; hs < size_t{2} << 22; hs <<= 2) {
       benchmark.head_start_dynamic = false;
       benchmark.head_start_size = hs;
       benchmark.run<alx::dist::bwt_rle, alx::dist::bwt_index<alx::dist::bwt_rle>>("r_batch");
     }
-  }
+  }*/
   // Benchmark different dynamic top trie sizes
-  {
-    for (size_t hs = 1; hs < size_t{2} << 22; hs <<= 2) {
+  /*{
+    for (size_t hs = 16; hs < size_t{2} << 22; hs <<= 2) {
       benchmark.head_start_dynamic = true;
       benchmark.head_start_size = hs;
       benchmark.run<alx::dist::bwt_rle, alx::dist::bwt_index<alx::dist::bwt_rle>>("r_batch");
     }
-  }
+  }*/
 
   // Benchmark FM-index for different query batch sizes
-  /*{
+  {
     size_t old_q_size = benchmark.num_patterns;
     for (size_t q_size = 1; q_size <= old_q_size; q_size *= 2) {
       benchmark.num_patterns = q_size;
@@ -198,13 +198,13 @@ int main(int argc, char** argv) {
     size_t old_q_size = benchmark.num_patterns;
     for (size_t q_size = 1; q_size <= old_q_size; q_size *= 2) {
       benchmark.num_patterns = q_size;
-      benchmark.run<alx::dist::bwt, alx::dist::bwt_index<alx::dist::bwt>>("fm_batch");
+      benchmark.run<alx::dist::bwt, alx::dist::bwt_index<alx::dist::bwt>>("fm_batch_preshared");
     }
     benchmark.num_patterns = old_q_size;
   }
 
   // Benchmark r-index for different query batch sizes
-  {
+  /*{
     size_t old_q_size = benchmark.num_patterns;
     for (size_t q_size = 1; q_size <= old_q_size; q_size *= 2) {
       benchmark.num_patterns = q_size;

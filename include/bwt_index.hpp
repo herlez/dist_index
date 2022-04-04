@@ -60,7 +60,7 @@ class concatenated_strings {
     {
       const int starts_size = (innode_rank == 0) ? strings_num : 0;
       const int conc_size = (innode_rank == 0) ? strings_len : 0;
-      MPI_Win_allocate_shared(starts_size * sizeof(uint32_t), sizeof(uint32_t), MPI_INFO_NULL, COMM_SHARED_MEMORY, &starts, &window_st);
+      MPI_Win_allocate_shared(starts_size * sizeof(uint64_t), sizeof(uint64_t), MPI_INFO_NULL, COMM_SHARED_MEMORY, &starts, &window_st);
       MPI_Win_allocate_shared(conc_size, sizeof(char), MPI_INFO_NULL, COMM_SHARED_MEMORY, &concat_string, &window_cc);
       MPI_Aint full_win_size;
       int full_win_disp;
@@ -84,7 +84,7 @@ class concatenated_strings {
     print();
 
     // Local buffers
-    std::vector<uint32_t> local_starts;
+    std::vector<uint64_t> local_starts;
     local_starts.resize(local_strings_num);
     std::vector<char> local_concat;
     local_concat.resize(local_strings_len);
@@ -115,12 +115,12 @@ class concatenated_strings {
     std::vector<int> displs;
     displs.resize(innode_size);
     std::exclusive_scan(recvcounts.begin(), recvcounts.end(), displs.begin(), strings_before);
-    MPI_Gatherv(local_starts.data(), local_strings_num, MPI_UINT32_T, starts, recvcounts.data(), displs.data(), MPI_UINT32_T, 0, COMM_SHARED_MEMORY);
+    MPI_Gatherv(local_starts.data(), local_strings_num, MPI_UINT64_T, starts, recvcounts.data(), displs.data(), MPI_UINT64_T, 0, COMM_SHARED_MEMORY);
     print();
 
     // Share starts with other shared memory roots
     if (innode_rank == 0) {
-      MPI_Allreduce(MPI_IN_PLACE, starts, strings_num, MPI_UINT32_T, MPI_SUM, COMM_ROOTS);
+      MPI_Allreduce(MPI_IN_PLACE, starts, strings_num, MPI_UINT64_T, MPI_SUM, COMM_ROOTS);
     }
     MPI_Barrier(MPI_COMM_WORLD);
     print();
@@ -172,7 +172,7 @@ class concatenated_strings {
     return concat_string;
   }
 
-  uint32_t* starts_data() {
+  uint64_t* starts_data() {
     return starts;
   }
 
@@ -183,7 +183,7 @@ class concatenated_strings {
   size_t strings_num = 0;
   size_t strings_len = 0;
   char* concat_string = nullptr;
-  uint32_t* starts = nullptr;
+  uint64_t* starts = nullptr;
   MPI_Win window_cc;
   MPI_Win window_st;
 };
@@ -281,12 +281,12 @@ class bwt_index {
           while ((i < max_head_start_entries / 2) && start_index_for_new_entries < end_index_for_new_entries) {
             // new str_enumerator
             std::string str_enum = code_to_string(std::get<0>(head_start_candidates[start_index_for_new_entries]));
-            //std::cout << "Root: " << str_enum << "\n";
+            // std::cout << "Root: " << str_enum << "\n";
             str_enum.push_back(0);
             for (size_t j = 1; j < alphabet.size(); ++j) {
               str_enum.back() = alphabet[j];
               patterns.push_back(str_enum);
-              //std::cout << str_enum << "\n";
+              // std::cout << str_enum << "\n";
               ++i;
             }
             ++start_index_for_new_entries;
@@ -336,7 +336,7 @@ class bwt_index {
         if (my_rank() == 0) {
           size_t up_to = std::min(std::min(head_start_candidates.size(), up_to_per_round),
                                   max_head_start_entries - final_head_start_candidates.size());
-          //std::cout << "up_to=" << up_to << "\n";
+          // std::cout << "up_to=" << up_to << "\n";
           std::copy(head_start_candidates.begin(), head_start_candidates.begin() + up_to,
                     std::back_inserter(final_head_start_candidates));
         }
@@ -364,14 +364,14 @@ class bwt_index {
       MPI_Comm COMM_ROOTS;
       MPI_Comm_split(MPI_COMM_WORLD, root_color, my_rank(), &COMM_ROOTS);
       if (innode_rank == 0) {
-        MPI_Bcast(&final_head_start_candidates, 1, my_MPI_SIZE_T, 0, COMM_ROOTS);
+        MPI_Bcast(&head_start_candidates_taken, 1, my_MPI_SIZE_T, 0, COMM_ROOTS);
         final_head_start_candidates.resize(head_start_candidates_taken);
 
-        MPI_Bcast(&final_head_start_candidates, head_start_candidates_taken * 3, my_MPI_SIZE_T, 0, COMM_ROOTS);
+        MPI_Bcast(final_head_start_candidates.data(), head_start_candidates_taken * 3, my_MPI_SIZE_T, 0, COMM_ROOTS);
         MPI_Comm_free(&COMM_ROOTS);
 
         // Add candidates to map
-        
+
         for (auto const& cand : final_head_start_candidates) {
           size_t code = std::get<0>(cand);
           m_head_start[code].first = std::get<1>(cand);
@@ -379,8 +379,8 @@ class bwt_index {
         }
       }
       MPI_Comm_free(&COMM_SHARED_MEMORY);
-      
-      //std::cout << "End candidates: " << final_head_start_candidates.size() << "\n";
+
+      // std::cout << "End candidates: " << final_head_start_candidates.size() << "\n";
       /*for (auto const& cand : final_head_start_candidates) {
         std::cout << std::get<0>(cand) << " " << std::get<1>(cand) << " " << std::get<2>(cand) << "\n";
       }
@@ -410,7 +410,15 @@ class bwt_index {
 
       // Enumerate over all strings form this alphabet up to max_head_start_entries strings or t_headstart depth
       util::string_enumerator str_enumerator(alphabet);
-      for (size_t i = 0; i < max_head_start_entries; ++i) {
+
+      size_t az = alphabet.size() - 1;
+      size_t max_possible_head_start = 0;
+      for(size_t pow = 0; pow <= 8; ++pow) {
+        max_possible_head_start += intpow(az, pow);
+      }
+      std::cout << " max_possible_head_start=" << max_possible_head_start;
+      
+      for (size_t i = 0; i < std::min(max_possible_head_start, max_head_start_entries); ++i) {
         patterns.push_back(str_enumerator.get());
         str_enumerator.next();
       }
@@ -441,15 +449,15 @@ class bwt_index {
     int root_color = (innode_rank == 0) ? 0 : MPI_UNDEFINED;
     MPI_Comm COMM_ROOTS;
     MPI_Comm_split(MPI_COMM_WORLD, root_color, my_rank(), &COMM_ROOTS);
+    MPI_Datatype query_mpi_type = rank_query::mpi_type();
+    MPI_Type_commit(&query_mpi_type);
+
     if (innode_rank == 0) {
       MPI_Bcast(&finished_queries_size, 1, my_MPI_SIZE_T, 0, COMM_ROOTS);
       finished_queries.resize(finished_queries_size);
-      MPI_Datatype query_mpi_type = rank_query::mpi_type();
-      MPI_Type_commit(&query_mpi_type);
 
-      MPI_Bcast(&finished_queries, finished_queries_size, query_mpi_type, 0, COMM_ROOTS);
+      MPI_Bcast(finished_queries.data(), finished_queries_size, query_mpi_type, 0, COMM_ROOTS);
       MPI_Comm_free(&COMM_ROOTS);
-      MPI_Type_free(&query_mpi_type);
 
       for (size_t i = 0; i < finished_queries.size(); i += 2) {
         size_t left, right;
@@ -462,6 +470,7 @@ class bwt_index {
         io::alxout << "Result: " << right - left << "\n";
       }
     }
+    MPI_Type_free(&query_mpi_type);
     MPI_Comm_free(&COMM_SHARED_MEMORY);
   }
 
