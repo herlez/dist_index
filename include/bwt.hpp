@@ -42,6 +42,7 @@ class bwt {
       return;
     }
     // Read last row.
+    auto start_time = MPI_Wtime();
     {
       m_global_size = std::filesystem::file_size(last_row_path);
       std::tie(m_start_index, m_end_index) = slice_indexes(m_global_size, m_world_rank, m_world_size);
@@ -67,6 +68,8 @@ class bwt {
       }
       MPI_File_close(&handle);
     }
+    auto end_time = MPI_Wtime();
+    alx::dist::io::benchout << " bwt_load_time=" << static_cast<size_t>((end_time-start_time)*1000);
 
     // Build local histogram. Use m_first_row_starts temporarily
     {
