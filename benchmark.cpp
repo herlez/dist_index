@@ -9,6 +9,7 @@
 #include "include/bwt.hpp"
 #include "include/bwt_index.hpp"
 #include "include/bwt_rle.hpp"
+#include "include/bwt_rle_eq.hpp"
 #include "include/util/io.hpp"
 #include "include/util/timer.hpp"
 
@@ -115,13 +116,13 @@ class index_benchmark {
 
       // Counting Queries
       timer.reset();
-      if (algo == "fm_single" || algo == "r_single") {
+      if (algo == "fm_single" || algo == "r_single" || algo == "r_eq_single") {
         count_results = r_index.occ_one_by_one(patterns);
       }
-      if (algo == "fm_batch" || algo == "r_batch") {
+      if (algo == "fm_batch" || algo == "r_batch" || algo == "r_eq_batch") {
         count_results = r_index.occ_batched(patterns);
       }
-      if (algo == "fm_batch_preshared" || algo == "r_batch_preshared") {
+      if (algo == "fm_batch_preshared" || algo == "r_batch_preshared" || "r_eq_preshared") {
         count_results = r_index.occ_batched_preshared(patterns);
       }
       // for (auto i: count_results)
@@ -185,10 +186,12 @@ int main(int argc, char** argv) {
     }
   }*/
 
+  benchmark.head_start_dynamic = false;
+  benchmark.head_start_size = 1;
   // Benchmark FM-index for different query batch sizes
-  {
+  /*{
     size_t old_q_size = benchmark.num_patterns;
-    for (size_t q_size = 1; q_size <= old_q_size; q_size *= 2) {
+    for (size_t q_size = 1024; q_size <= old_q_size; q_size *= 2) {
       benchmark.num_patterns = q_size;
       benchmark.run<alx::dist::bwt, alx::dist::bwt_index<alx::dist::bwt>>("fm_batch");
     }
@@ -196,7 +199,7 @@ int main(int argc, char** argv) {
   }
   {
     size_t old_q_size = benchmark.num_patterns;
-    for (size_t q_size = 1; q_size <= old_q_size; q_size *= 2) {
+    for (size_t q_size = 1024; q_size <= old_q_size; q_size *= 2) {
       benchmark.num_patterns = q_size;
       benchmark.run<alx::dist::bwt, alx::dist::bwt_index<alx::dist::bwt>>("fm_batch_preshared");
     }
@@ -204,9 +207,9 @@ int main(int argc, char** argv) {
   }
 
   // Benchmark r-index for different query batch sizes
-  /*{
+  {
     size_t old_q_size = benchmark.num_patterns;
-    for (size_t q_size = 1; q_size <= old_q_size; q_size *= 2) {
+    for (size_t q_size = 1024; q_size <= old_q_size; q_size *= 2) {
       benchmark.num_patterns = q_size;
       benchmark.run<alx::dist::bwt_rle, alx::dist::bwt_index<alx::dist::bwt_rle>>("r_batch");
     }
@@ -214,7 +217,7 @@ int main(int argc, char** argv) {
   }
   {
     size_t old_q_size = benchmark.num_patterns;
-    for (size_t q_size = 1; q_size <= old_q_size; q_size *= 2) {
+    for (size_t q_size = 1024; q_size <= old_q_size; q_size *= 2) {
       benchmark.num_patterns = q_size;
       benchmark.run<alx::dist::bwt_rle, alx::dist::bwt_index<alx::dist::bwt_rle>>("r_batch_preshared");
     }
@@ -222,12 +225,16 @@ int main(int argc, char** argv) {
   }*/
 
   // Benchmark FM-Index
-  //benchmark.run<alx::dist::bwt, alx::dist::bwt_index<alx::dist::bwt>>("fm_batch");
-  //benchmark.run<alx::dist::bwt, alx::dist::bwt_index<alx::dist::bwt>>("fm_batch_preshared");
+  benchmark.run<alx::dist::bwt, alx::dist::bwt_index<alx::dist::bwt>>("fm_batch");
+  benchmark.run<alx::dist::bwt, alx::dist::bwt_index<alx::dist::bwt>>("fm_batch_preshared");
 
   // Benchmark r-Index
-  //benchmark.run<alx::dist::bwt_rle, alx::dist::bwt_index<alx::dist::bwt_rle>>("r_batch");
-  //benchmark.run<alx::dist::bwt_rle, alx::dist::bwt_index<alx::dist::bwt_rle>>("r_batch_preshared");
+  benchmark.run<alx::dist::bwt_rle, alx::dist::bwt_index<alx::dist::bwt_rle>>("r_batch");
+  benchmark.run<alx::dist::bwt_rle, alx::dist::bwt_index<alx::dist::bwt_rle>>("r_batch_preshared");
+
+  // Benchmark equally distributed r-Index
+  benchmark.run<alx::dist::bwt_rle_eq, alx::dist::bwt_index<alx::dist::bwt_rle_eq>>("r_eq_batch");
+  benchmark.run<alx::dist::bwt_rle_eq, alx::dist::bwt_index<alx::dist::bwt_rle_eq>>("r_eq_batch_preshared");
 
   // deprecated
   // benchmark.run<alx::dist::bwt, alx::dist::bwt_index<alx::dist::bwt>>("fm_single");

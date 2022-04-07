@@ -413,11 +413,11 @@ class bwt_index {
 
       size_t az = alphabet.size() - 1;
       size_t max_possible_head_start = 0;
-      for(size_t pow = 0; pow <= 8; ++pow) {
+      for (size_t pow = 0; pow <= 8; ++pow) {
         max_possible_head_start += intpow(az, pow);
       }
       std::cout << " max_possible_head_start=" << max_possible_head_start;
-      
+
       for (size_t i = 0; i < std::min(max_possible_head_start, max_head_start_entries); ++i) {
         patterns.push_back(str_enumerator.get());
         str_enumerator.next();
@@ -530,6 +530,10 @@ class bwt_index {
         std::tie(left, right) = std::minmax(finished_queries[i].m_border.u64(), finished_queries[i + 1].m_border.u64());
         io::alxout << "Result: " << right - left << "\n";
         results.push_back(right - left);
+        /*if (right - left > 1000) {
+          std::cout << finished_queries[i] << " " << finished_queries[i+1] << " =" << right-left << "\n";
+          
+        }*/
       }
     }
     return results;

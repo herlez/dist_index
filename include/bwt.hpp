@@ -52,7 +52,19 @@ class bwt {
         MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
       }
       m_last_row.resize(size());
-      MPI_File_read_at_all(handle, m_start_index, m_last_row.data(), size(), MPI_CHAR, MPI_STATUS_IGNORE);
+      // Because MPI_File_read_at_all only supports reading MAX_INT characters we do more iterations
+      size_t read_already = 0;
+      bool read_finished = (read_already == size());
+      while (!read_finished) {
+        size_t read_next = std::min(size_t{1} << 30, size() - read_already);
+        MPI_File_read_at_all(handle, m_start_index + read_already, m_last_row.data() + read_already, read_next, MPI_CHAR, MPI_STATUS_IGNORE);
+
+        read_already += read_next;        
+        if(read_already == size()) {
+          read_finished = true;
+        }
+        MPI_Allreduce(MPI_IN_PLACE, &read_finished, 1, MPI_CXX_BOOL, MPI_LAND, MPI_COMM_WORLD);
+      }
       MPI_File_close(&handle);
     }
 
@@ -63,12 +75,18 @@ class bwt {
       for (char c : m_last_row) {
         ++m_first_row_starts[c];
       }
+      /*for (size_t i = 0; i < m_first_row_starts.size(); ++i)
+        std::cout << m_first_row_starts[i] << " ";
+      std::cout << "\n";*/
       // Exclusive scan histogram
       MPI_Barrier(MPI_COMM_WORLD);
       MPI_Exscan(m_first_row_starts.data(), m_exclusive_prefix_histogram.data(), 256, my_MPI_SIZE_T, MPI_SUM, MPI_COMM_WORLD);
 
-      io::alxout << m_first_row_starts << "\n";
-      io::alxout << m_exclusive_prefix_histogram << "\n";
+      // std::cout << m_first_row_starts << "\n";
+      // std::cout << m_exclusive_prefix_histogram << "\n";
+      /*for (size_t i = 0; i < m_exclusive_prefix_histogram.size(); ++i)
+        std::cout << m_exclusive_prefix_histogram[i] << " ";
+      std::cout << "\n";*/
     }
 
     // Broadcast start of runs in first row
@@ -80,14 +98,18 @@ class bwt {
         }
         // Exclusive scan histogram to get global starting positions
         std::exclusive_scan(m_first_row_starts.begin(), m_first_row_starts.end(), m_first_row_starts.begin(), size_t{0});
-        io::alxout << m_first_row_starts << "\n";
+        // std::cout << m_first_row_starts << "\n";
+        /*for (size_t i = 0; i < m_first_row_starts.size(); ++i)
+          std::cout << m_first_row_starts[i] << " ";
+        std::cout << "\n";*/
       }
       // Broadcast global starting positions
       MPI_Bcast(m_first_row_starts.data(), m_first_row_starts.size(), my_MPI_SIZE_T, m_world_size - 1, MPI_COMM_WORLD);
-      io::alxout << m_first_row_starts << "\n";
+      /*for (size_t i = 0; i < m_exclusive_prefix_histogram.size(); ++i)
+        std::cout << m_exclusive_prefix_histogram[i] << " ";
+      std::cout << "\n";*/
     }
   }
-
 
   // Getter
   size_t global_size() const {
@@ -137,7 +159,7 @@ class bwt {
     std::tie(slice, local_pos) = locate_bwt_slice(global_pos, m_global_size, m_world_size);
     assert(slice == m_world_rank);
     io::alxout << "Answering rank. global_pos=" << global_pos << " local_pos=" << local_pos << " world_size=" << m_world_size << " c=" << c << "\n";
-    io::alxout << "Result: " << m_exclusive_prefix_histogram[c] + local_rank(local_pos, c) <<  "\n";
+    io::alxout << "Result: " << m_exclusive_prefix_histogram[c] + local_rank(local_pos, c) << "\n";
     return m_exclusive_prefix_histogram[c] + local_rank(local_pos, c);
   }
 
